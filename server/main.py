@@ -63,7 +63,7 @@ cred = credentials.Certificate("firebase_service_key.json")
 firebase_admin.initialize_app(cred)
 
 @app.get("/")
-def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm_id: str | None = None, thread_id: int | None = None):
+def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm_id: str | None = None, thread_id: int | None = None, query: str | None = None):
     try:
         uid = auth.verify_session_cookie(jwt, check_revoked=True)["uid"]
 
@@ -75,6 +75,13 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
             if not session.exec(select(User).where(User.name == "Donald Trump")).first():
                 session.add(User(uid="b", name="Donald Trump", email="donald@gauntletai.com", photo_url="https://pbs.twimg.com/profile_images/874276197357596672/kUuht00m_400x400.jpg"))
                 session.commit()
+
+            if query:
+                messages = session.exec(select(Message).where(Message.content.contains(query))).all()
+                return templates.TemplateResponse(req, "search.html", {
+                    "query": query,
+                    "messages": [message.model_dump() for message in messages],
+                })
 
             channels = session.exec(select(Channel)).all()
             if not channels:
@@ -89,7 +96,7 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
             messages = []
             if not channel_id and not dm_id and not thread_id:
                 channel_id = channels[0].channel_id
-            if channel_id:
+            elif channel_id:
                 current_channel = session.exec(select(Channel).where(Channel.channel_id == channel_id)).first()
                 if not current_channel:
                     channel_id = channels[0].channel_id
@@ -101,7 +108,6 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
             elif thread_id:
                 current_thread = session.exec(select(Message).where(Message.message_id == thread_id)).first()
                 messages = session.exec(select(Message).where(Message.thread_id == thread_id)).all()
-            print(messages)
             users = session.exec(select(User).where(User.uid != uid)).all()
             current_user = session.exec(select(User).where(User.uid == uid)).first()
 
