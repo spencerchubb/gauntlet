@@ -77,10 +77,12 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
                 session.commit()
 
             if query:
-                messages = session.exec(select(Message).where(Message.content.contains(query))).all()
+                # messages = session.exec(select(Message).where(Message.content.contains(query))).all()
+                messages = session.exec(select(Message, User).where(Message.content.contains(query)).join(User, User.uid == Message.uid)).all()
+                messages = [{**message.model_dump(), **user.model_dump()} for message, user in messages]
                 return templates.TemplateResponse(req, "search.html", {
                     "query": query,
-                    "messages": [message.model_dump() for message in messages],
+                    "messages": messages,
                 })
 
             channels = session.exec(select(Channel)).all()
@@ -101,16 +103,17 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
                 if not current_channel:
                     channel_id = channels[0].channel_id
                     current_channel = session.exec(select(Channel).where(Channel.channel_id == channel_id)).first()
-                messages = session.exec(select(Message).where(Message.channel_id == channel_id)).all()
+                messages = session.exec(select(Message, User).where(Message.channel_id == channel_id).join(User, User.uid == Message.uid)).all()
             elif dm_id:
                 current_dm = session.exec(select(User).where(User.uid == dm_id)).first()
-                messages = session.exec(select(Message).where(Message.dm_id == dm_id)).all()
+                messages = session.exec(select(Message, User).where(Message.dm_id == dm_id).join(User, User.uid == Message.uid)).all()
             elif thread_id:
-                current_thread = session.exec(select(Message).where(Message.message_id == thread_id)).first()
-                messages = session.exec(select(Message).where(Message.thread_id == thread_id)).all()
+                current_thread = session.exec(select(Message, User).where(Message.message_id == thread_id)).first()
+                messages = session.exec(select(Message).where(Message.thread_id == thread_id).join(User, User.uid == Message.uid)).all()
             users = session.exec(select(User).where(User.uid != uid)).all()
             current_user = session.exec(select(User).where(User.uid == uid)).first()
 
+        messages = [{**message.model_dump(), **user.model_dump()} for message, user in messages]
         return templates.TemplateResponse(
             req,
             "index.html",
@@ -119,7 +122,7 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
                 "current_channel": current_channel.model_dump() if current_channel else None,
                 "current_dm": current_dm.model_dump() if current_dm else None,
                 "current_thread": current_thread.model_dump() if current_thread else None,
-                "messages": [message.model_dump() for message in messages],
+                "messages": messages,
                 "users": [user.model_dump() for user in users],
                 "current_user": current_user.model_dump() if current_user else None,
             },

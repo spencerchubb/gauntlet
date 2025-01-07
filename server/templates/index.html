@@ -218,10 +218,10 @@ em-emoji-picker {
             {% for message in messages %}
             <div class="message">
                 <div class="messageBody">
-                    <img src="https://lh3.googleusercontent.com/a/ACg8ocIUUu9fkjodZAElbzkHm6Ad2kAKg0i15mtTIgFGZca8CrFC9SE=s96-c" />
+                    <img src="{{ message.photo_url }}" />
                     <div>
                         <div>
-                            <h3>John Doe</h3>
+                            <h3>{{ message.name }}</h3>
                             <p>{{ message.created }}</p>
                         </div>
                         <p>{{ message.content }}</p>

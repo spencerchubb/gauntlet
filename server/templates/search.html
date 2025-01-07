@@ -18,10 +18,10 @@ h1, h3, p {
     <h1 style="margin: 16px;">Search Results for "{{ query }}"</h1>
     {% for message in messages %}
     <div style="display: flex; gap: 16px; margin: 16px;">
-        <img src="https://lh3.googleusercontent.com/a/ACg8ocIUUu9fkjodZAElbzkHm6Ad2kAKg0i15mtTIgFGZca8CrFC9SE=s96-c" style="width: 48px; height: 48px; border-radius: 50%;" />
+        <img src="{{ message.photo_url }}" style="width: 48px; height: 48px; border-radius: 50%;" />
         <div style="display: flex; flex-direction: column; gap: 8px;">
             <div style="display: flex; align-items: end; gap: 8px;">
-                <h3>John Doe</h3>
+                <h3>{{ message.name }}</h3>
                 <p style="font-size: 14px; color: #aaa;">{{ message.created }}</p>
             </div>
             <p>{{ message.content }}</p>
