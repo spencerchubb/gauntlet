@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>ChatGenius</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/main.css">
+    <link rel="icon" href="/static/favicon.jpg" type="image/x-icon">
+</head>
+
+<body style="display: flex; align-items: center; justify-content: center;">
+    <p style="color: white;">Verifying...</p>
+</body>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, isSignInWithEmailLink, signInWithEmailLink } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+
+const firebaseConfig = { apiKey: "AIzaSyB8gJdQrr4xbtaSIMOQz3CjXZncArPgHb8", authDomain: "gauntlet-fb39e.firebaseapp.com", projectId: "gauntlet-fb39e", storageBucket: "gauntlet-fb39e.firebasestorage.app", messagingSenderId: "182122241317", appId: "1:182122241317:web:49d3955c6759cc5b25cecc" };
+const app = initializeApp(firebaseConfig);
+const auth = getAuth();
+
+if (isSignInWithEmailLink(auth, window.location.href)) {
+    let email = window.localStorage.getItem("emailForSignIn");
+    if (!email) {
+        // User opened the link on a different device.
+        email = window.prompt("For security purposes, please confirm your email");
+    }
+    signInWithEmailLink(auth, email, window.location.href)
+        .then(async (result) => {
+            window.localStorage.removeItem("emailForSignIn");
+            const user = result.user;
+            const idToken = await user.getIdToken();
+            fetch("/auth/google", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    uid: user.uid,
+                    email: user.email,
+                    displayName: user.displayName,
+                    idToken: idToken,
+                }),
+            }).then(res => {
+                document.location = "/";
+            }).catch(e => console.error(e));
+        })
+        .catch((error) => {
+            alert(error.message);
+        });
+}
+</script>
+
+</html>

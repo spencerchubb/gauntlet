@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>ChatGenius</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/main.css">
+    <link rel="icon" href="/static/favicon.jpg" type="image/x-icon">
+</head>
+
+<style>
+body {
+    display: flex;
+    width: 100%;
+    height: 100%;
+}
+
+img {
+    /* Prevents distortion */
+    object-fit: cover;
+    display: block;
+}
+
+em-emoji-picker {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.iconButton {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+    border-radius: 4px;
+    background: none;
+    border: solid 1px #555;
+    cursor: pointer;
+    padding: 4px;
+
+    &:hover {
+        background: #444;
+    }
+}
+
+#channels {
+    display: flex;
+    flex-direction: column;
+    padding: 16px 8px;
+    gap: 8px;
+    border-right: solid 1px #555;
+    width: 300px;
+    height: 100%;
+
+    & h2 {
+        color: #ccc;
+    }
+
+    & button {
+        border-radius: 4px;
+        padding: 8px;
+        border: none;
+        outline: none;
+        background: #222;
+        color: #fff;
+        font-size: 14px;
+        font-weight: normal;
+        cursor: pointer;
+        text-align: left;
+
+        &:hover {
+            background: #444;
+        }
+    }
+}
+
+#myStatus {
+    color: #ccc;
+    cursor: pointer;
+    border: solid 1px #555;
+    border-radius: 4px;
+    padding: 8px;
+}
+
+#chat {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+}
+
+#chatHeader {
+    display: flex;
+    align-items: center;
+    padding: 16px;
+    gap: 8px;
+    border-bottom: solid 1px #555;
+
+    & img {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+    }
+
+    & h2 {
+        color: #ccc;
+    }
+}
+
+#chatBody {
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    padding: 16px 0;
+    gap: 16px;
+}
+
+#chatInput {
+    padding: 8px;
+    margin: 16px;
+    border: none;
+    border-radius: 4px;
+    background: #333;
+    font-size: 16px;
+    color: white;
+
+    &:focus {
+        outline: solid 1px #aaa;
+    }
+}
+
+.message {
+    display: flex;
+    padding: 0 16px;
+    gap: 8px;
+    color: #d8d8d8;
+
+    & img {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+    }
+
+    & > div > div {
+        display: flex;
+        align-items: end;
+        gap: 12px;
+    }
+
+    & > div > p {
+        margin-top: 4px;
+    }
+
+    & > div > div > p {
+        color: #aaa;
+    }
+}
+</style>
+
+<body>
+    <div id="channels">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>Channels</h2>
+            <button id="createChannelButton" style="width: 32px; height: 32px; text-align: center; font-weight: bold; font-size: 24px; padding: 0;">+</button>
+        </div>
+        {% for channel in channels %}
+        <button class="channelButton" data-channel-id="{{ channel.channel_id }}"># {{ channel.name }}</button>
+        {% endfor %}
+        <div style="margin-top: 16px;"></div>
+        <h2>DMs</h2>
+        {% for user in users %}
+        <button class="dmButton" data-dm-id="{{ user.uid }}">{{ user.name }}</button>
+        {% endfor %}
+
+        <div style="flex-grow: 1;"></div>
+
+        <p id="myStatus">Status: {{ current_user.status or "not set" }}</p>
+    </div>
+    <div id="chat">
+        <div id="chatHeader">
+            {% if current_channel %}
+            <h2># {{ current_channel.name }}</h2>
+            <div style="flex-grow: 1;"></div>
+            <button class="iconButton" id="updateChannelButton">✏️</button>
+            <button class="iconButton" id="deleteChannelButton">🗑️</button>
+            {% else %}
+            <img src="{{ current_dm.photo_url }}" />
+            <div style="margin-left: 8px;">
+                <h2>{{ current_dm.name }}</h2>
+                <p style="color: #aaa; margin-top: 4px;">Status: {{ current_dm.status or "not set" }}</p>
+            </div>
+            {% endif %}
+        </div>
+        <div id="chatBody">
+            {% for message in messages %}
+            <div class="message">
+                <img src="https://lh3.googleusercontent.com/a/ACg8ocIUUu9fkjodZAElbzkHm6Ad2kAKg0i15mtTIgFGZca8CrFC9SE=s96-c" />
+                <div>
+                    <div>
+                        <h3>John Doe</h3>
+                        <p>{{ message.created }}</p>
+                    </div>
+                    <p>{{ message.content }}</p>
+                </div>
+                <div style="flex-grow: 1;"></div>
+                <button class="messageReactButton iconButton">🙂</button>
+                <button class="messageUpdateButton iconButton">✏️</button>
+                <button class="messageDeleteButton iconButton">🗑️</button>
+            </div>
+            {% endfor %}
+        </div>
+        <input
+            id="chatInput"
+            type="text"
+            placeholder="Abc..."
+        />
+    </div>
+
+    <div id="messageHoverActions" style="display: none; position: absolute; top: 0; left: 0; background: #222; border-radius: 4px; padding: 4px;">
+        <button>👍</button>
+        <button>👎</button>
+    </div>
+</body>
+
+<script type="module">
+import * as emojiMart from "https://cdn.jsdelivr.net/npm/emoji-mart@5.6.0/+esm";
+const pickerOptions = { onEmojiSelect: console.log };
+const picker = new emojiMart.Picker(pickerOptions);
+picker.style.display = "none";
+document.body.appendChild(picker);
+
+function post(path, body) {
+    console.log(path, body);
+    return fetch(path, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+    });
+}
+
+// Scroll to bottom of chatBody
+chatBody.scrollTop = chatBody.scrollHeight;
+
+const channels = JSON.parse('{{ channels | tojson | safe }}');
+const currentChannel = JSON.parse('{{ current_channel | tojson | safe }}');
+const currentDm = JSON.parse('{{ current_dm | tojson | safe }}');
+const messages = JSON.parse('{{ messages | tojson | safe }}');
+console.log(currentChannel);
+console.log(currentDm);
+
+createChannelButton.onclick = () => {
+    const name = prompt("Enter channel name");
+    if (!name) return;
+    post("/channels/create", { name }).then(() => location.reload());
+}
+
+const updateChannelButton = document.getElementById("updateChannelButton");
+if (updateChannelButton) 
+    updateChannelButton.onclick = () => {
+        const name = prompt("Enter channel name");
+        if (!name) return;
+        post("/channels/update", { channel_id: currentChannel.channel_id, name }).then(() => location.reload());
+    }
+
+const deleteChannelButton = document.getElementById("deleteChannelButton");
+if (deleteChannelButton)
+    deleteChannelButton.onclick = () => {
+        if (!confirm("Are you sure you want to delete this channel?")) return;
+        post("/channels/delete", { channel_id: currentChannel.channel_id }).then(() => location.reload());
+    }
+
+document.querySelectorAll(".channelButton").forEach(button => {
+    button.onclick = () => {
+        const channelId = button.getAttribute("data-channel-id");
+        location.href = `/?channel_id=${channelId}`;
+    }
+});
+
+document.querySelectorAll(".dmButton").forEach(button => {
+    button.onclick = () => {
+        const dmId = button.getAttribute("data-dm-id");
+        location.href = `/?dm_id=${dmId}`;
+    }
+});
+
+document.querySelectorAll(".messageReactButton").forEach(button => {
+    button.onclick = (event) => {
+        console.log("clicked");
+        event.stopPropagation();
+        picker.style.display = "flex";
+    }
+});
+
+document.body.onclick = (event) => {
+    // If picker is showing and clicked outside of it, hide it
+    const pickerIsShowing = picker.style.display !== "none";
+    const pickerIsClicked = event.target.closest("em-emoji-picker") === picker;
+    if (pickerIsShowing && !pickerIsClicked) {
+        picker.style.display = "none";
+    }
+}
+
+chatInput.onkeydown = (event) => {
+    if (event.key === "Enter") {
+        const content = chatInput.value;
+        chatInput.value = "";
+        post("/messages/create", {
+            channel_id: currentChannel?.channel_id,
+            dm_id: currentDm?.uid,
+            content: content
+        }).then(() => {
+            location.reload();
+        });
+    }
+}
+
+myStatus.onclick = () => {
+    const status = prompt("Enter status");
+    if (!status) return;
+    post("/users/update", { status }).then(() => {
+        myStatus.textContent = `Status: ${status}`;
+    });
+}
+
+function initWebSocket() {
+    const ws = new WebSocket(`ws://${location.host}/ws`);
+    
+    ws.onmessage = async function(event) {
+        const data = event.data;
+    };
+}
+
+initWebSocket();
+</script>
+
+</html>

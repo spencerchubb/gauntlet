@@ -1,0 +1,11 @@
+node_modules/
+__pycache__/
+.venv/
+.env
+db.sqlite3
+log.txt
+TODO.txt
+firebase_service_key.json
+server/static/animals/
+server/static/clothing/
+server/static/scenes/

@@ -1,0 +1,8 @@
+boto3
+fastapi[standard]
+firebase_admin
+groq
+openai
+requests
+sqlmodel
+websockets
