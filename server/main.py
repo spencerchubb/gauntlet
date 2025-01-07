@@ -18,14 +18,14 @@ class Channel(SQLModel, table=True):
 class Message(SQLModel, table=True):
     message_id: int | None = Field(default=None, primary_key=True)
 
-    # Either channel_id or dm_id must be set
+    # Either channel_id, dm_id, or thread_id must be set
     channel_id: int | None = Field(default=None)
     dm_id: str | None = Field(default=None)
+    thread_id: int | None = Field(default=None)
 
     uid: str
     created: datetime | None = Field(default_factory=lambda: datetime.now())
     content: str
-    parent_message_id: int | None = Field(default=None)
     reactions: str
     
     @field_serializer("created")
@@ -63,7 +63,7 @@ cred = credentials.Certificate("firebase_service_key.json")
 firebase_admin.initialize_app(cred)
 
 @app.get("/")
-def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm_id: str | None = None):
+def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm_id: str | None = None, thread_id: int | None = None):
     try:
         uid = auth.verify_session_cookie(jwt, check_revoked=True)["uid"]
 
@@ -85,8 +85,9 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
 
             current_channel = None
             current_dm = None
+            current_thread = None
             messages = []
-            if not channel_id and not dm_id:
+            if not channel_id and not dm_id and not thread_id:
                 channel_id = channels[0].channel_id
             if channel_id:
                 current_channel = session.exec(select(Channel).where(Channel.channel_id == channel_id)).first()
@@ -97,6 +98,9 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
             elif dm_id:
                 current_dm = session.exec(select(User).where(User.uid == dm_id)).first()
                 messages = session.exec(select(Message).where(Message.dm_id == dm_id)).all()
+            elif thread_id:
+                current_thread = session.exec(select(Message).where(Message.message_id == thread_id)).first()
+                messages = session.exec(select(Message).where(Message.thread_id == thread_id)).all()
             print(messages)
             users = session.exec(select(User).where(User.uid != uid)).all()
             current_user = session.exec(select(User).where(User.uid == uid)).first()
@@ -108,6 +112,7 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
                 "channels": [channel.model_dump() for channel in channels],
                 "current_channel": current_channel.model_dump() if current_channel else None,
                 "current_dm": current_dm.model_dump() if current_dm else None,
+                "current_thread": current_thread.model_dump() if current_thread else None,
                 "messages": [message.model_dump() for message in messages],
                 "users": [user.model_dump() for user in users],
                 "current_user": current_user.model_dump() if current_user else None,
@@ -167,6 +172,7 @@ def delete_channel(req: Request, body: DeleteChannelBody):
 class CreateMessageBody(BaseModel):
     channel_id: int | None = None
     dm_id: str | None = None
+    thread_id: int | None = None
     content: str
 
 @app.post("/messages/create")
@@ -177,7 +183,7 @@ def create_message(req: Request, body: CreateMessageBody, jwt: JwtCookie = None)
         return "Unauthorized", 401
 
     with Session(engine) as session:
-        session.add(Message(channel_id=body.channel_id, dm_id=body.dm_id, uid=uid, content=body.content))
+        session.add(Message(channel_id=body.channel_id, dm_id=body.dm_id, thread_id=body.thread_id, uid=uid, content=body.content))
         session.commit()
 
 class UpdateMessageBody(BaseModel):

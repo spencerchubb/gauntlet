@@ -160,6 +160,7 @@ em-emoji-picker {
 
         & > div > div > p {
             color: #aaa;
+            font-size: 14px;
         }
     }
 
@@ -202,12 +203,14 @@ em-emoji-picker {
             <div style="flex-grow: 1;"></div>
             <button class="iconButton" id="updateChannelButton">✏️</button>
             <button class="iconButton" id="deleteChannelButton">🗑️</button>
-            {% else %}
+            {% elif current_dm %}
             <img src="{{ current_dm.photo_url }}" />
             <div style="margin-left: 8px;">
                 <h2>{{ current_dm.name }}</h2>
                 <p style="color: #aaa; margin-top: 4px;">Status: {{ current_dm.status or "not set" }}</p>
             </div>
+            {% elif current_thread %}
+            <h2>🧵 {{ current_thread.content }}</h2>
             {% endif %}
         </div>
         <div id="chatBody">
@@ -226,6 +229,7 @@ em-emoji-picker {
                     <button class="messageReactButton iconButton" data-message-id="{{ message.message_id }}">🙂</button>
                     <button class="messageUpdateButton iconButton" data-message-id="{{ message.message_id }}">✏️</button>
                     <button class="messageDeleteButton iconButton" data-message-id="{{ message.message_id }}">🗑️</button>
+                    <button class="messageThreadButton iconButton" data-message-id="{{ message.message_id }}">🧵</button>
                 </div>
                 <div class="messageReactions">
                     {% for reaction, count in message.reactions.items() %}
@@ -252,9 +256,11 @@ em-emoji-picker {
 const channels = JSON.parse('{{ channels | tojson | safe }}');
 const currentChannel = JSON.parse('{{ current_channel | tojson | safe }}');
 const currentDm = JSON.parse('{{ current_dm | tojson | safe }}');
+const currentThread = JSON.parse('{{ current_thread | tojson | safe }}');
 const messages = JSON.parse('{{ messages | tojson | safe }}');
 console.log(currentChannel);
 console.log(currentDm);
+console.log(currentThread);
 
 import * as emojiMart from "https://cdn.jsdelivr.net/npm/emoji-mart@5.6.0/+esm";
 let messageIdOfReaction;
@@ -340,7 +346,8 @@ document.querySelectorAll(".messageUpdateButton").forEach(button => {
     button.onclick = (event) => {
         const content = prompt("Enter message content", messages.find(message => message.message_id === parseInt(button.getAttribute("data-message-id"))).content);
         if (!content) return;
-        post("/messages/update", { message_id: button.getAttribute("data-message-id"), content }).then(() => {
+        const message_id = parseInt(button.getAttribute("data-message-id"));
+        post("/messages/update", { message_id, content }).then(() => {
             location.reload();
         });
     }
@@ -350,9 +357,17 @@ document.querySelectorAll(".messageDeleteButton").forEach(button => {
     button.onclick = (event) => {
         event.stopPropagation();
         if (!confirm("Are you sure you want to delete this message?")) return;
-        post("/messages/delete", { message_id: parseInt(button.getAttribute("data-message-id")) }).then(() => {
+        const message_id = parseInt(button.getAttribute("data-message-id"));
+        post("/messages/delete", { message_id }).then(() => {
             location.reload();
         });
+    }
+});
+
+document.querySelectorAll(".messageThreadButton").forEach(button => {
+    button.onclick = (event) => {
+        const message_id = parseInt(button.getAttribute("data-message-id"));
+        location.href = `/?thread_id=${message_id}`;
     }
 });
 
@@ -372,6 +387,7 @@ chatInput.onkeydown = (event) => {
         post("/messages/create", {
             channel_id: currentChannel?.channel_id,
             dm_id: currentDm?.uid,
+            thread_id: currentThread?.message_id,
             content: content
         }).then(() => {
             location.reload();
