@@ -70,7 +70,7 @@ em-emoji-picker {
         color: #ccc;
     }
 
-    & button {
+    & a, & button {
         border-radius: 4px;
         padding: 8px;
         border: none;
@@ -179,6 +179,7 @@ em-emoji-picker {
 <body>
     <div id="channels">
         <input id="searchInput" type="text" placeholder="🔍 Search..." />
+        <a href="/files" style="text-decoration: none; color: white;">📂 Shared Files</a>
         <div style="margin-top: 16px;"></div>
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <h2>Channels</h2>
@@ -414,6 +415,10 @@ function initWebSocket() {
 }
 
 initWebSocket();
+
+// fetch("/generate_presigned_url").then(res => res.json()).then(data => {
+//     console.log(data);
+// });
 </script>
 
 </html>

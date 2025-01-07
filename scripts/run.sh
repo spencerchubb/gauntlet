@@ -19,8 +19,8 @@ function kill_port() {
 
 source .venv/bin/activate
 
-cd server
 source .env
+cd server
 
 version=$1 # 'dev' or 'prod'
 

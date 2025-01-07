@@ -1,7 +1,9 @@
 import json
+import uuid
 from datetime import datetime
 from typing import Annotated
 
+import boto3
 from fastapi import Cookie, FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -108,8 +110,8 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
                 current_dm = session.exec(select(User).where(User.uid == dm_id)).first()
                 messages = session.exec(select(Message, User).where(Message.dm_id == dm_id).join(User, User.uid == Message.uid)).all()
             elif thread_id:
-                current_thread = session.exec(select(Message, User).where(Message.message_id == thread_id)).first()
-                messages = session.exec(select(Message).where(Message.thread_id == thread_id).join(User, User.uid == Message.uid)).all()
+                current_thread = session.exec(select(Message).where(Message.message_id == thread_id)).first()
+                messages = session.exec(select(Message, User).where(Message.thread_id == thread_id).join(User, User.uid == Message.uid)).all()
             users = session.exec(select(User).where(User.uid != uid)).all()
             current_user = session.exec(select(User).where(User.uid == uid)).first()
 
@@ -138,6 +140,14 @@ def signin(req: Request):
 @app.get("/verify")
 def verify(req: Request):
     return templates.TemplateResponse(req, "verify.html")
+
+@app.get("/files")
+def files(req: Request):
+    files = []
+    s3_client = boto3.client("s3", region_name="us-east-2")
+    for file in s3_client.list_objects_v2(Bucket="spencer-chubb-gauntlet", Prefix="chatgenius/")["Contents"]:
+        files.append(file["Key"].split("/")[1])
+    return templates.TemplateResponse(req, "files.html", {"files": files})
 
 @app.websocket("/ws")
 async def ws(websocket: WebSocket):
@@ -279,4 +289,21 @@ def auth_google(body: AuthGoogleBody, res: Response):
         res.set_cookie(key="jwt", value=jwt, expires=month)
         return
     except Exception as e:
+        return "Unauthorized", 
+
+@app.get("/generate_presigned_url")
+def generate_presigned_url(req: Request, filename: str, method: str, jwt: JwtCookie = None):
+    try:
+        uid = auth.verify_session_cookie(jwt, check_revoked=True)["uid"]
+    except Exception as e:
         return "Unauthorized", 401
+
+    s3_client = boto3.client("s3", region_name="us-east-2")
+    key = f"chatgenius/{filename}"
+    url = s3_client.generate_presigned_url(
+        f"{method.lower()}_object",
+        Params={"Bucket": "spencer-chubb-gauntlet", "Key": key},
+        ExpiresIn=3600,
+        HttpMethod=method.upper(),
+    )
+    return {"url": url}
