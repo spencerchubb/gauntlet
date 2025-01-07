@@ -26,6 +26,7 @@ em-emoji-picker {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
+    box-shadow: 0 0 16px 0 #aaa;
 }
 
 .iconButton {
@@ -132,6 +133,7 @@ em-emoji-picker {
 
 .message {
     display: flex;
+    flex-direction: column;
     padding: 0 16px;
     gap: 8px;
     color: #d8d8d8;
@@ -142,18 +144,34 @@ em-emoji-picker {
         border-radius: 50%;
     }
 
-    & > div > div {
+    & .messageBody {
         display: flex;
-        align-items: end;
-        gap: 12px;
+        gap: 8px;
+
+        & > div > div {
+            display: flex;
+            align-items: end;
+            gap: 12px;
+        }
+
+        & > div > p {
+            margin-top: 4px;
+        }
+
+        & > div > div > p {
+            color: #aaa;
+        }
     }
 
-    & > div > p {
-        margin-top: 4px;
-    }
+    & .messageReactions {
+        display: flex;
+        gap: 8px;
 
-    & > div > div > p {
-        color: #aaa;
+        & p {
+            background: #282828;
+            padding: 4px;
+            border-radius: 4px;
+        }
     }
 }
 </style>
@@ -195,18 +213,25 @@ em-emoji-picker {
         <div id="chatBody">
             {% for message in messages %}
             <div class="message">
-                <img src="https://lh3.googleusercontent.com/a/ACg8ocIUUu9fkjodZAElbzkHm6Ad2kAKg0i15mtTIgFGZca8CrFC9SE=s96-c" />
-                <div>
+                <div class="messageBody">
+                    <img src="https://lh3.googleusercontent.com/a/ACg8ocIUUu9fkjodZAElbzkHm6Ad2kAKg0i15mtTIgFGZca8CrFC9SE=s96-c" />
                     <div>
-                        <h3>John Doe</h3>
-                        <p>{{ message.created }}</p>
+                        <div>
+                            <h3>John Doe</h3>
+                            <p>{{ message.created }}</p>
+                        </div>
+                        <p>{{ message.content }}</p>
                     </div>
-                    <p>{{ message.content }}</p>
+                    <div style="flex-grow: 1;"></div>
+                    <button class="messageReactButton iconButton" data-message-id="{{ message.message_id }}">🙂</button>
+                    <button class="messageUpdateButton iconButton" data-message-id="{{ message.message_id }}">✏️</button>
+                    <button class="messageDeleteButton iconButton" data-message-id="{{ message.message_id }}">🗑️</button>
                 </div>
-                <div style="flex-grow: 1;"></div>
-                <button class="messageReactButton iconButton">🙂</button>
-                <button class="messageUpdateButton iconButton">✏️</button>
-                <button class="messageDeleteButton iconButton">🗑️</button>
+                <div class="messageReactions">
+                    {% for reaction, count in message.reactions.items() %}
+                    <p>{{ count }} {{ reaction }}</p>
+                    {% endfor %}
+                </div>
             </div>
             {% endfor %}
         </div>
@@ -224,10 +249,34 @@ em-emoji-picker {
 </body>
 
 <script type="module">
+const channels = JSON.parse('{{ channels | tojson | safe }}');
+const currentChannel = JSON.parse('{{ current_channel | tojson | safe }}');
+const currentDm = JSON.parse('{{ current_dm | tojson | safe }}');
+const messages = JSON.parse('{{ messages | tojson | safe }}');
+console.log(currentChannel);
+console.log(currentDm);
+
 import * as emojiMart from "https://cdn.jsdelivr.net/npm/emoji-mart@5.6.0/+esm";
-const pickerOptions = { onEmojiSelect: console.log };
+let messageIdOfReaction;
+const pickerOptions = {
+    onEmojiSelect: (emoji) => {
+        post("/reactions/create", {
+            message_id: messageIdOfReaction,
+            reaction: emoji.native,
+        }).then(() => {
+            location.reload();
+            hidePicker();
+        });
+    },
+};
 const picker = new emojiMart.Picker(pickerOptions);
-picker.style.display = "none";
+const hidePicker = () => {
+    picker.style.display = "none";
+}
+const showPicker = () => {
+    picker.style.display = "flex";
+}   
+hidePicker();
 document.body.appendChild(picker);
 
 function post(path, body) {
@@ -243,13 +292,6 @@ function post(path, body) {
 
 // Scroll to bottom of chatBody
 chatBody.scrollTop = chatBody.scrollHeight;
-
-const channels = JSON.parse('{{ channels | tojson | safe }}');
-const currentChannel = JSON.parse('{{ current_channel | tojson | safe }}');
-const currentDm = JSON.parse('{{ current_dm | tojson | safe }}');
-const messages = JSON.parse('{{ messages | tojson | safe }}');
-console.log(currentChannel);
-console.log(currentDm);
 
 createChannelButton.onclick = () => {
     const name = prompt("Enter channel name");
@@ -288,9 +330,9 @@ document.querySelectorAll(".dmButton").forEach(button => {
 
 document.querySelectorAll(".messageReactButton").forEach(button => {
     button.onclick = (event) => {
-        console.log("clicked");
         event.stopPropagation();
-        picker.style.display = "flex";
+        showPicker();
+        messageIdOfReaction = parseInt(button.getAttribute("data-message-id"));
     }
 });
 
@@ -299,7 +341,7 @@ document.body.onclick = (event) => {
     const pickerIsShowing = picker.style.display !== "none";
     const pickerIsClicked = event.target.closest("em-emoji-picker") === picker;
     if (pickerIsShowing && !pickerIsClicked) {
-        picker.style.display = "none";
+        hidePicker();
     }
 }
 

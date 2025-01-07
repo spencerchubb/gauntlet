@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from typing import Annotated
 
@@ -25,16 +26,15 @@ class Message(SQLModel, table=True):
     created: datetime | None = Field(default_factory=lambda: datetime.now())
     content: str
     parent_message_id: int | None = Field(default=None)
+    reactions: str
     
     @field_serializer("created")
     def serialize_created(self, created: datetime) -> str:
         return created.strftime("%m-%d %H:%M")
-
-class Reaction(SQLModel, table=True):
-    reaction_id: int | None = Field(default=None, primary_key=True)
-    message_id: int
-    uid: str
-    reaction: str
+    
+    @field_serializer("reactions")
+    def serialize_reactions(self, reactions: str) -> dict[str, int]:
+        return json.loads(reactions or "{}")
 
 class User(SQLModel, table=True):
     uid: str = Field(primary_key=True)
@@ -197,6 +197,26 @@ class DeleteMessageBody(BaseModel):
 def delete_message(req: Request, body: DeleteMessageBody):
     with Session(engine) as session:
         session.exec(delete(Message).where(Message.message_id == body.message_id))
+        session.commit()
+
+class CreateReactionBody(BaseModel):
+    message_id: int
+    reaction: str
+
+@app.post("/reactions/create")
+def create_reaction(req: Request, body: CreateReactionBody, jwt: JwtCookie = None):
+    with Session(engine) as session:
+        # Get message
+        message = session.exec(select(Message).where(Message.message_id == body.message_id)).first()
+
+        # Get reactions as dictionary
+        reactions = json.loads(message.reactions or "{}")
+
+        # Update reaction count
+        reactions[body.reaction] = reactions.get(body.reaction, 0) + 1
+
+        # Update message
+        session.exec(update(Message).where(Message.message_id == body.message_id).values(reactions=json.dumps(reactions)))
         session.commit()
 
 class UpdateUserBody(BaseModel):
