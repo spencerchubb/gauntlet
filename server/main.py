@@ -127,7 +127,7 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
             users = session.exec(select(User).where(User.uid != uid)).all()
             current_user = session.exec(select(User).where(User.uid == uid)).first()
 
-        messages = [{**message.model_dump(), **user.model_dump()} for message, user in messages]
+        messages = [{"message": message.model_dump(), "sender": user.model_dump()} for message, user in messages]
         return templates.TemplateResponse(
             req,
             "index.html",
@@ -164,15 +164,26 @@ def files(req: Request):
             files.append(file["Key"].split("/")[1])
     return templates.TemplateResponse(req, "files.html", {"files": files})
 
+websockets = {}
+
 @app.websocket("/ws")
-async def ws(websocket: WebSocket):
+async def ws(websocket: WebSocket, jwt: JwtCookie = None):
+    try:
+        uid = auth.verify_session_cookie(jwt, check_revoked=True)["uid"]
+    except Exception as e:
+        return "Unauthorized", 401
+
     await websocket.accept()
+    websockets[uid] = websocket
+    print(f"connection opened for {uid} ({len(websockets)} total)")
     
     try:
         while True:
             data = await websocket.receive_json()
     except WebSocketDisconnect:
-        print("WebSocket disconnected")
+        if uid in websockets:
+            del websockets[uid]
+            print(f"connection closed for {uid} ({len(websockets)} total)")
 
 class CreateChannelBody(BaseModel):
     name: str
@@ -231,15 +242,33 @@ class CreateMessageBody(BaseModel):
     content: str
 
 @app.post("/messages/create")
-def create_message(req: Request, body: CreateMessageBody, jwt: JwtCookie = None):
+async def create_message(req: Request, body: CreateMessageBody, jwt: JwtCookie = None):
     try:
         uid = auth.verify_session_cookie(jwt, check_revoked=True)["uid"]
     except Exception as e:
         return "Unauthorized", 401
 
     with Session(engine) as session:
-        session.add(Message(channel_id=body.channel_id, dm_id=body.dm_id, thread_id=body.thread_id, uid=uid, content=body.content))
+        sender = session.exec(select(User).where(User.uid == uid)).first()
+        message = Message(channel_id=body.channel_id, dm_id=body.dm_id, thread_id=body.thread_id, uid=uid, content=body.content)
+        session.add(message)
+
         session.commit()
+        session.refresh(message)
+        session.refresh(sender)
+        message = message.model_dump()
+        sender = sender.model_dump()
+
+        payload = {"endpoint": "/messages/create", "message": message, "sender": sender}
+        if body.channel_id: # Notify everyone
+            for uid, websocket in websockets.items():
+                await websocket.send_json(payload)
+        elif body.dm_id: # Notify specific users
+            for recipient in session.exec(select(Dm).where(Dm.dm_id == body.dm_id)).all():
+                if recipient.uid not in websockets:
+                    continue
+                await websockets[recipient.uid].send_json(payload)
+        # TODO: handle thread case
 
 class UpdateMessageBody(BaseModel):
     message_id: int
@@ -265,7 +294,7 @@ class CreateReactionBody(BaseModel):
     reaction: str
 
 @app.post("/reactions/create")
-def create_reaction(req: Request, body: CreateReactionBody, jwt: JwtCookie = None):
+async def create_reaction(req: Request, body: CreateReactionBody, jwt: JwtCookie = None):
     with Session(engine) as session:
         # Get message
         message = session.exec(select(Message).where(Message.message_id == body.message_id)).first()
@@ -279,6 +308,17 @@ def create_reaction(req: Request, body: CreateReactionBody, jwt: JwtCookie = Non
         # Update message
         session.exec(update(Message).where(Message.message_id == body.message_id).values(reactions=json.dumps(reactions)))
         session.commit()
+
+        if message.channel_id: # Notify everyone
+            for uid, websocket in websockets.items():
+                await websocket.send_json({"endpoint": "/reactions/create", "message_id": message.message_id, "reactions": reactions})
+        elif message.dm_id: # Notify specific users
+            for recipient in session.exec(select(Dm).where(Dm.dm_id == message.dm_id)).all():
+                if recipient.uid not in websockets:
+                    continue
+                await websockets[recipient.uid].send_json({"endpoint": "/reactions/create", "message_id": message.message_id, "reactions": reactions})
+
+
 
 class UpdateUserBody(BaseModel):
     status: str | None = None

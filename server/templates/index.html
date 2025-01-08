@@ -256,32 +256,7 @@ em-emoji-picker {
             <h2>🧵 {{ current_thread.content }}</h2>
             {% endif %}
         </div>
-        <div id="chatBody">
-            {% for message in messages %}
-            <div class="message">
-                <div class="messageBody">
-                    <img src="{{ message.photo_url }}" />
-                    <div>
-                        <div>
-                            <h3>{{ message.name }}</h3>
-                            <p>{{ message.created }}</p>
-                        </div>
-                        <p>{{ message.content }}</p>
-                    </div>
-                    <div style="flex-grow: 1;"></div>
-                    <button class="messageReactButton iconButton" data-message-id="{{ message.message_id }}">🙂</button>
-                    <button class="messageUpdateButton iconButton" data-message-id="{{ message.message_id }}">✏️</button>
-                    <button class="messageDeleteButton iconButton" data-message-id="{{ message.message_id }}">🗑️</button>
-                    <button class="messageThreadButton iconButton" data-message-id="{{ message.message_id }}">🧵</button>
-                </div>
-                <div class="messageReactions">
-                    {% for reaction, count in message.reactions.items() %}
-                    <p>{{ count }} {{ reaction }}</p>
-                    {% endfor %}
-                </div>
-            </div>
-            {% endfor %}
-        </div>
+        <div id="chatBody"></div>
         <input id="chatInput" type="text" placeholder="Abc..." style="margin: 16px;" />
     </div>
 
@@ -313,10 +288,8 @@ const pickerOptions = {
         post("/reactions/create", {
             message_id: messageIdOfReaction,
             reaction: emoji.native,
-        }).then(() => {
-            location.reload();
-            hidePicker();
         });
+        hidePicker();
     },
 };
 const picker = new emojiMart.Picker(pickerOptions);
@@ -339,9 +312,6 @@ function post(path, body) {
         body: JSON.stringify(body),
     });
 }
-
-// Scroll to bottom of chatBody
-chatBody.scrollTop = chatBody.scrollHeight;
 
 searchInput.onkeydown = (event) => {
     if (event.key !== "Enter" || !searchInput.value) return;
@@ -402,42 +372,29 @@ document.querySelectorAll("#selectUserModal > button").forEach(button => {
     }
 });
 
-document.querySelectorAll(".messageReactButton").forEach(button => {
-    button.onclick = (event) => {
-        event.stopPropagation();
-        showPicker();
-        messageIdOfReaction = parseInt(button.getAttribute("data-message-id"));
-    }
-});
+document.onclick = (event) => {
+    event.stopPropagation();
 
-document.querySelectorAll(".messageUpdateButton").forEach(button => {
-    button.onclick = (event) => {
-        const content = prompt("Enter message content", messages.find(message => message.message_id === parseInt(button.getAttribute("data-message-id"))).content);
+    if (event.target.classList.contains("messageReactButton")) {
+        showPicker();
+        messageIdOfReaction = parseInt(event.target.getAttribute("data-message-id"));
+    } else if (event.target.classList.contains("messageUpdateButton")) {
+        const content = prompt("Enter message content", messages.find(message => message.message_id === parseInt(event.target.getAttribute("data-message-id"))).content);
         if (!content) return;
-        const message_id = parseInt(button.getAttribute("data-message-id"));
+        const message_id = parseInt(event.target.getAttribute("data-message-id"));
         post("/messages/update", { message_id, content }).then(() => {
             location.reload();
         });
-    }
-});
-
-document.querySelectorAll(".messageDeleteButton").forEach(button => {
-    button.onclick = (event) => {
-        event.stopPropagation();
-        if (!confirm("Are you sure you want to delete this message?")) return;
-        const message_id = parseInt(button.getAttribute("data-message-id"));
+    } else if (event.target.classList.contains("messageDeleteButton")) {
+        const message_id = parseInt(event.target.getAttribute("data-message-id"));
         post("/messages/delete", { message_id }).then(() => {
             location.reload();
         });
-    }
-});
-
-document.querySelectorAll(".messageThreadButton").forEach(button => {
-    button.onclick = (event) => {
-        const message_id = parseInt(button.getAttribute("data-message-id"));
+    } else if (event.target.classList.contains("messageThreadButton")) {
+        const message_id = parseInt(event.target.getAttribute("data-message-id"));
         location.href = `/?thread_id=${message_id}`;
     }
-});
+}
 
 document.body.onclick = (event) => {
     // If picker is showing and clicked outside of it, hide it
@@ -457,8 +414,6 @@ chatInput.onkeydown = (event) => {
             dm_id: currentDm?.dm_id,
             thread_id: currentThread?.message_id,
             content: content
-        }).then(() => {
-            location.reload();
         });
     }
 }
@@ -471,15 +426,51 @@ myStatus.onclick = () => {
     });
 }
 
-function initWebSocket() {
-    const ws = new WebSocket(`ws://${location.host}/ws`);
-    
-    ws.onmessage = async function(event) {
-        const data = event.data;
-    };
+function renderReactions(reactions) {
+    return Object.entries(reactions).map(([reaction, count]) => `<p>${count} ${reaction}</p>`).join("");
 }
 
-initWebSocket();
+function renderMessage(message, sender) {
+    const messageElement = document.createElement("div");
+    messageElement.classList.add("message");
+    messageElement.setAttribute("data-message-id", message.message_id);
+    messageElement.innerHTML = `<div class="messageBody">
+        <img src="${sender.photo_url}" />
+        <div>
+            <div>
+                <h3>${sender.name}</h3>
+                <p>${message.created}</p>
+            </div>
+            <p>${message.content}</p>
+        </div>
+        <div style="flex-grow: 1;"></div>
+        <button class="messageReactButton iconButton" data-message-id="${message.message_id}">🙂</button>
+        <button class="messageUpdateButton iconButton" data-message-id="${message.message_id}">✏️</button>
+        <button class="messageDeleteButton iconButton" data-message-id="${message.message_id}">🗑️</button>
+        <button class="messageThreadButton iconButton" data-message-id="${message.message_id}">🧵</button>
+    </div>
+    <div class="messageReactions">${renderReactions(message.reactions ?? {})}</div>`;
+    chatBody.appendChild(messageElement);
+}
+
+messages.forEach(message => renderMessage(message.message, message.sender));
+chatBody.scrollTop = chatBody.scrollHeight;
+
+const ws = new WebSocket(`ws://${location.host}/ws`);
+ws.onmessage = async function(event) {
+    const data = JSON.parse(event.data);
+
+    if (data.endpoint === "/messages/create") {
+        if (data.message.channel_id && currentChannel?.channel_id && data.message.channel_id === currentChannel?.channel_id) {
+            renderMessage(data.message, data.sender);
+        } else if (data.message.dm_id && currentDm?.dm_id && data.message.dm_id === currentDm?.dm_id) {
+            renderMessage(data.message, data.sender);
+        }
+    } else if (data.endpoint === "/reactions/create") {
+        const reactions = document.querySelector(`[data-message-id="${data.message_id}"] > .messageReactions`);
+        if (reactions) reactions.innerHTML = renderReactions(data.reactions);
+    }
+};
 </script>
 
 </html>
