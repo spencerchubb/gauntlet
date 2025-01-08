@@ -174,6 +174,42 @@ em-emoji-picker {
         }
     }
 }
+
+#selectUserModal {
+    display: none;
+    flex-direction: column;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #222;
+    border-radius: 4px;
+    padding: 8px;
+    gap: 8px;
+    min-width: 250px;
+    width: 50%;
+    height: 50%;
+    overflow-y: auto;
+    box-shadow: 0 0 16px 0 #aaa;
+
+    & button {
+        border-radius: 4px;
+        padding: 8px;
+        border: none;
+        outline: none;
+        background: #181818;
+        color: #fff;
+        font-size: 14px;
+        font-weight: normal;
+        cursor: pointer;
+        text-align: left;
+        border: solid 1px #555;
+
+        &:hover {
+            background: #444;
+        }
+    }
+}
 </style>
 
 <body>
@@ -189,9 +225,14 @@ em-emoji-picker {
         <button class="channelButton" data-channel-id="{{ channel.channel_id }}"># {{ channel.name }}</button>
         {% endfor %}
         <div style="margin-top: 16px;"></div>
-        <h2>DMs</h2>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h2>DMs</h2>
+            <button id="createDmButton" style="width: 32px; height: 32px; text-align: center; font-weight: bold; font-size: 24px; padding: 0;">+</button>
+        </div>
         {% for user in users %}
-        <button class="dmButton" data-dm-id="{{ user.uid }}">{{ user.name }}</button>
+        {% endfor %}
+        {% for dm in dms %}
+        <button class="dmButton" data-dm-id="{{ dm.dm_id }}">{{ dm.name }}</button>
         {% endfor %}
 
         <div style="flex-grow: 1;"></div>
@@ -244,9 +285,14 @@ em-emoji-picker {
         <input id="chatInput" type="text" placeholder="Abc..." style="margin: 16px;" />
     </div>
 
-    <div id="messageHoverActions" style="display: none; position: absolute; top: 0; left: 0; background: #222; border-radius: 4px; padding: 4px;">
-        <button>👍</button>
-        <button>👎</button>
+    <div id="selectUserModal">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <p style="color: white;">Select a user to DM</p>
+            <button id="closeSelectUserModalButton">❌</button>
+        </div>
+        {% for user in users %}
+        <button data-user-id="{{ user.uid }}">{{ user.name }}</button>
+        {% endfor %}
     </div>
 </body>
 
@@ -330,10 +376,29 @@ document.querySelectorAll(".channelButton").forEach(button => {
     }
 });
 
+createDmButton.onclick = () => {
+    selectUserModal.style.display = "flex";
+}
+
+closeSelectUserModalButton.onclick = () => {
+    selectUserModal.style.display = "none";
+}
+
 document.querySelectorAll(".dmButton").forEach(button => {
     button.onclick = () => {
         const dmId = button.getAttribute("data-dm-id");
         location.href = `/?dm_id=${dmId}`;
+    }
+});
+
+document.querySelectorAll("#selectUserModal > button").forEach(button => {
+    button.onclick = () => {
+        const userId = button.getAttribute("data-user-id");
+        post("/dms/create", { uid: userId })
+            .then(res => res.json())
+            .then(data => {
+                location.href = `/?dm_id=${data.dm_id}`;
+            });
     }
 });
 
@@ -389,7 +454,7 @@ chatInput.onkeydown = (event) => {
         chatInput.value = "";
         post("/messages/create", {
             channel_id: currentChannel?.channel_id,
-            dm_id: currentDm?.uid,
+            dm_id: currentDm?.dm_id,
             thread_id: currentThread?.message_id,
             content: content
         }).then(() => {
@@ -415,10 +480,6 @@ function initWebSocket() {
 }
 
 initWebSocket();
-
-// fetch("/generate_presigned_url").then(res => res.json()).then(data => {
-//     console.log(data);
-// });
 </script>
 
 </html>

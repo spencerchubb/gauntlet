@@ -1,5 +1,4 @@
 import json
-import uuid
 from datetime import datetime
 from typing import Annotated
 
@@ -9,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, field_serializer
-from sqlmodel import create_engine, delete, Field, select, Session, SQLModel, update
+from sqlmodel import create_engine, delete, Field, func, select, Session, SQLModel, text, update
 
 JwtCookie = Annotated[str | None, Cookie()]
 
@@ -17,12 +16,16 @@ class Channel(SQLModel, table=True):
     channel_id: int | None = Field(default=None, primary_key=True)
     name: str
 
+class Dm(SQLModel, table=True):
+    dm_id: int | None = Field(default=None, primary_key=True)
+    uid: str | None = Field(default=None, primary_key=True)
+
 class Message(SQLModel, table=True):
     message_id: int | None = Field(default=None, primary_key=True)
 
     # Either channel_id, dm_id, or thread_id must be set
     channel_id: int | None = Field(default=None)
-    dm_id: str | None = Field(default=None)
+    dm_id: int | None = Field(default=None)
     thread_id: int | None = Field(default=None)
 
     uid: str
@@ -65,7 +68,7 @@ cred = credentials.Certificate("firebase_service_key.json")
 firebase_admin.initialize_app(cred)
 
 @app.get("/")
-def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm_id: str | None = None, thread_id: int | None = None, query: str | None = None):
+def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm_id: int | None = None, thread_id: int | None = None, query: str | None = None):
     try:
         uid = auth.verify_session_cookie(jwt, check_revoked=True)["uid"]
 
@@ -79,13 +82,20 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
                 session.commit()
 
             if query:
-                # messages = session.exec(select(Message).where(Message.content.contains(query))).all()
                 messages = session.exec(select(Message, User).where(Message.content.contains(query)).join(User, User.uid == Message.uid)).all()
                 messages = [{**message.model_dump(), **user.model_dump()} for message, user in messages]
                 return templates.TemplateResponse(req, "search.html", {
                     "query": query,
                     "messages": messages,
                 })
+
+            # Use raw sql because it's hard to do with sqlmodel
+            dms = session.exec(text(f"""
+                select dm1.dm_id, user.name from dm as dm1
+                join dm as dm2 on dm1.dm_id=dm2.dm_id and dm1.uid != dm2.uid
+                join user on dm2.uid=user.uid
+                where dm1.uid='{uid}'""")).all()
+            dms = [{"dm_id": dm[0], "name": dm[1]} for dm in dms]
 
             channels = session.exec(select(Channel)).all()
             if not channels:
@@ -107,7 +117,9 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
                     current_channel = session.exec(select(Channel).where(Channel.channel_id == channel_id)).first()
                 messages = session.exec(select(Message, User).where(Message.channel_id == channel_id).join(User, User.uid == Message.uid)).all()
             elif dm_id:
-                current_dm = session.exec(select(User).where(User.uid == dm_id)).first()
+                current_dm = session.exec(select(Dm).where(Dm.dm_id == dm_id).where(Dm.uid != uid)).first()
+                current_dm = session.exec(select(User).where(User.uid == current_dm.uid)).first()
+                current_dm = { "dm_id": dm_id, **current_dm.model_dump() }
                 messages = session.exec(select(Message, User).where(Message.dm_id == dm_id).join(User, User.uid == Message.uid)).all()
             elif thread_id:
                 current_thread = session.exec(select(Message).where(Message.message_id == thread_id)).first()
@@ -121,8 +133,9 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
             "index.html",
             {
                 "channels": [channel.model_dump() for channel in channels],
+                "dms": dms,
                 "current_channel": current_channel.model_dump() if current_channel else None,
-                "current_dm": current_dm.model_dump() if current_dm else None,
+                "current_dm": current_dm,
                 "current_thread": current_thread.model_dump() if current_thread else None,
                 "messages": messages,
                 "users": [user.model_dump() for user in users],
@@ -145,8 +158,10 @@ def verify(req: Request):
 def files(req: Request):
     files = []
     s3_client = boto3.client("s3", region_name="us-east-2")
-    for file in s3_client.list_objects_v2(Bucket="spencer-chubb-gauntlet", Prefix="chatgenius/")["Contents"]:
-        files.append(file["Key"].split("/")[1])
+    res = s3_client.list_objects_v2(Bucket="spencer-chubb-gauntlet", Prefix="chatgenius/")
+    if "Contents" in res:
+        for file in res["Contents"]:
+            files.append(file["Key"].split("/")[1])
     return templates.TemplateResponse(req, "files.html", {"files": files})
 
 @app.websocket("/ws")
@@ -188,9 +203,30 @@ def delete_channel(req: Request, body: DeleteChannelBody):
         session.exec(delete(Message).where(Message.channel_id == body.channel_id))
         session.commit()
 
+class CreateDmBody(BaseModel):
+    uid: str
+
+@app.post("/dms/create")
+def create_dm(req: Request, body: CreateDmBody, jwt: JwtCookie = None):
+    try:
+        my_uid = auth.verify_session_cookie(jwt, check_revoked=True)["uid"]
+    except Exception as e:
+        return "Unauthorized", 401
+
+    with Session(engine) as session:
+        dm_id = session.exec(select(func.max(Dm.dm_id))).first() or 0
+        dm_id += 1
+        dm = Dm(dm_id=dm_id, uid=body.uid)
+        session.add(dm)
+        dm = Dm(dm_id=dm_id, uid=my_uid)
+        session.add(dm)
+        session.commit()
+        return {"dm_id": dm.dm_id}
+    
+
 class CreateMessageBody(BaseModel):
     channel_id: int | None = None
-    dm_id: str | None = None
+    dm_id: int | None = None
     thread_id: int | None = None
     content: str
 
@@ -278,7 +314,6 @@ def auth_google(body: AuthGoogleBody, res: Response):
         existing_user = session.exec(select(User).where(User.uid == user.uid)).first()
         if existing_user:
             user.uid = existing_user.uid
-            user.created = existing_user.created
         if not existing_user:
             session.add(user)
             session.commit()
