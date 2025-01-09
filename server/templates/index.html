@@ -378,18 +378,6 @@ document.onclick = (event) => {
     if (event.target.classList.contains("messageReactButton")) {
         showPicker();
         messageIdOfReaction = parseInt(event.target.getAttribute("data-message-id"));
-    } else if (event.target.classList.contains("messageUpdateButton")) {
-        const content = prompt("Enter message content", messages.find(message => message.message_id === parseInt(event.target.getAttribute("data-message-id"))).content);
-        if (!content) return;
-        const message_id = parseInt(event.target.getAttribute("data-message-id"));
-        post("/messages/update", { message_id, content }).then(() => {
-            location.reload();
-        });
-    } else if (event.target.classList.contains("messageDeleteButton")) {
-        const message_id = parseInt(event.target.getAttribute("data-message-id"));
-        post("/messages/delete", { message_id }).then(() => {
-            location.reload();
-        });
     } else if (event.target.classList.contains("messageThreadButton")) {
         const message_id = parseInt(event.target.getAttribute("data-message-id"));
         location.href = `/?thread_id=${message_id}`;
@@ -445,8 +433,6 @@ function renderMessage(message, sender) {
         </div>
         <div style="flex-grow: 1;"></div>
         <button class="messageReactButton iconButton" data-message-id="${message.message_id}">🙂</button>
-        <button class="messageUpdateButton iconButton" data-message-id="${message.message_id}">✏️</button>
-        <button class="messageDeleteButton iconButton" data-message-id="${message.message_id}">🗑️</button>
         <button class="messageThreadButton iconButton" data-message-id="${message.message_id}">🧵</button>
     </div>
     <div class="messageReactions">${renderReactions(message.reactions ?? {})}</div>`;

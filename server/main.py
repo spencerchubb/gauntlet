@@ -270,25 +270,6 @@ async def create_message(req: Request, body: CreateMessageBody, jwt: JwtCookie =
                 await websockets[recipient.uid].send_json(payload)
         # TODO: handle thread case
 
-class UpdateMessageBody(BaseModel):
-    message_id: int
-    content: str
-
-@app.post("/messages/update")
-def update_message(req: Request, body: UpdateMessageBody):
-    with Session(engine) as session:
-        session.exec(update(Message).where(Message.message_id == body.message_id).values(content=body.content))
-        session.commit()
-
-class DeleteMessageBody(BaseModel):
-    message_id: int
-
-@app.post("/messages/delete")
-def delete_message(req: Request, body: DeleteMessageBody):
-    with Session(engine) as session:
-        session.exec(delete(Message).where(Message.message_id == body.message_id))
-        session.commit()
-
 class CreateReactionBody(BaseModel):
     message_id: int
     reaction: str
