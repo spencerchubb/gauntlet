@@ -234,7 +234,6 @@ def create_dm(req: Request, body: CreateDmBody, jwt: JwtCookie = None):
         session.commit()
         return {"dm_id": dm.dm_id}
     
-
 class CreateMessageBody(BaseModel):
     channel_id: int | None = None
     dm_id: int | None = None
@@ -256,19 +255,9 @@ async def create_message(req: Request, body: CreateMessageBody, jwt: JwtCookie =
         session.commit()
         session.refresh(message)
         session.refresh(sender)
-        message = message.model_dump()
-        sender = sender.model_dump()
 
-        payload = {"endpoint": "/messages/create", "message": message, "sender": sender}
-        if body.channel_id: # Notify everyone
-            for uid, websocket in websockets.items():
-                await websocket.send_json(payload)
-        elif body.dm_id: # Notify specific users
-            for recipient in session.exec(select(Dm).where(Dm.dm_id == body.dm_id)).all():
-                if recipient.uid not in websockets:
-                    continue
-                await websockets[recipient.uid].send_json(payload)
-        # TODO: handle thread case
+        payload = {"endpoint": "/messages/create", "message": message.model_dump(), "sender": sender.model_dump()}
+        await send_websocket_messages(session, message, payload)
 
 class CreateReactionBody(BaseModel):
     message_id: int
@@ -290,16 +279,8 @@ async def create_reaction(req: Request, body: CreateReactionBody, jwt: JwtCookie
         session.exec(update(Message).where(Message.message_id == body.message_id).values(reactions=json.dumps(reactions)))
         session.commit()
 
-        if message.channel_id: # Notify everyone
-            for uid, websocket in websockets.items():
-                await websocket.send_json({"endpoint": "/reactions/create", "message_id": message.message_id, "reactions": reactions})
-        elif message.dm_id: # Notify specific users
-            for recipient in session.exec(select(Dm).where(Dm.dm_id == message.dm_id)).all():
-                if recipient.uid not in websockets:
-                    continue
-                await websockets[recipient.uid].send_json({"endpoint": "/reactions/create", "message_id": message.message_id, "reactions": reactions})
-
-
+        payload = {"endpoint": "/reactions/create", "message_id": message.message_id, "reactions": reactions}
+        await send_websocket_messages(session, message, payload)
 
 class UpdateUserBody(BaseModel):
     status: str | None = None
@@ -363,3 +344,20 @@ def generate_presigned_url(req: Request, filename: str, method: str, jwt: JwtCoo
         HttpMethod=method.upper(),
     )
     return {"url": url}
+
+async def send_websocket_messages(session, message, payload):
+    # If neither channel_id nor dm_id are populated, we're in a thread.
+    # Traverse upward to find out if it's a channel or dm.
+    while not message.channel_id and not message.dm_id:
+        message = session.exec(select(Message).where(Message.message_id == message.thread_id)).first()
+
+    if message.channel_id:
+        # Notify everyone if it's a channel message
+        for websocket in websockets.values():
+            await websocket.send_json(payload)
+    elif message.dm_id:
+        # Notify users in the dm if it's a dm message
+        for recipient in session.exec(select(Dm).where(Dm.dm_id == message.dm_id)).all():
+            if recipient.uid not in websockets:
+                continue
+            await websockets[recipient.uid].send_json(payload)

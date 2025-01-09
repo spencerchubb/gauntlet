@@ -277,9 +277,10 @@ const currentChannel = JSON.parse('{{ current_channel | tojson | safe }}');
 const currentDm = JSON.parse('{{ current_dm | tojson | safe }}');
 const currentThread = JSON.parse('{{ current_thread | tojson | safe }}');
 const messages = JSON.parse('{{ messages | tojson | safe }}');
-console.log(currentChannel);
-console.log(currentDm);
-console.log(currentThread);
+
+const queryParams = new URLSearchParams(window.location.search);
+const threadId = parseInt(queryParams.get("thread_id"));
+console.log(threadId);
 
 import * as emojiMart from "https://cdn.jsdelivr.net/npm/emoji-mart@5.6.0/+esm";
 let messageIdOfReaction;
@@ -303,7 +304,7 @@ hidePicker();
 document.body.appendChild(picker);
 
 function post(path, body) {
-    console.log(path, body);
+    console.log("Sending request", path, body);
     return fetch(path, {
         method: "POST",
         headers: {
@@ -445,11 +446,14 @@ chatBody.scrollTop = chatBody.scrollHeight;
 const ws = new WebSocket(`ws://${location.host}/ws`);
 ws.onmessage = async function(event) {
     const data = JSON.parse(event.data);
+    console.log("Received message", data);
 
     if (data.endpoint === "/messages/create") {
         if (data.message.channel_id && currentChannel?.channel_id && data.message.channel_id === currentChannel?.channel_id) {
             renderMessage(data.message, data.sender);
         } else if (data.message.dm_id && currentDm?.dm_id && data.message.dm_id === currentDm?.dm_id) {
+            renderMessage(data.message, data.sender);
+        } else if (data.message.thread_id && threadId && data.message.thread_id === threadId) {
             renderMessage(data.message, data.sender);
         }
     } else if (data.endpoint === "/reactions/create") {
