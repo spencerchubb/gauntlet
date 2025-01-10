@@ -115,7 +115,8 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
             messages = []
             if not channel_id and not dm_id and not thread_id:
                 channel_id = channels[0].channel_id
-            elif channel_id:
+
+            if channel_id:
                 current_channel = session.exec(select(Channel).where(Channel.channel_id == channel_id)).first()
                 if not current_channel:
                     channel_id = channels[0].channel_id
