@@ -34,7 +34,7 @@ class Message(SQLModel, table=True):
     uid: str
     created: datetime | None = Field(default_factory=lambda: datetime.now())
     content: str
-    reactions: str
+    reactions: str | None = Field(default=None)
     
     @field_serializer("created")
     def serialize_created(self, created: datetime) -> str:
@@ -253,7 +253,6 @@ async def create_ai_message(dm_id: int, uid: str):
         system_prompt = f"Your job is to respond to Slack messages on behalf of {sender.name}. Be concise and to the point.\n\nHere is the prompt that {sender.name} has provided for you: {sender.prompt}"
         messages = [{"role": "user" if message.uid == uid else "assistant", "content": message.content} for message in messages]
         ai_response = bedrock_completion(system_prompt, messages)
-        ai_response = ai_response.replace("’", "'") # Replace weird apostrophes so it doesn't break JSON
         ai_response = Message(channel_id=None, dm_id=dm_id, thread_id=None, uid=sender.uid, content=ai_response)
         session.add(ai_response)
         session.commit()
