@@ -21,7 +21,7 @@ img {
     display: block;
 }
 
-input {
+input, textarea {
     padding: 8px;
     border: none;
     border-radius: 4px;
@@ -88,12 +88,16 @@ em-emoji-picker {
     }
 }
 
-#myStatus {
-    color: #ccc;
-    cursor: pointer;
-    border: solid 1px #555;
-    border-radius: 4px;
-    padding: 8px;
+#profileButton {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    & img {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+    }
 }
 
 #chat {
@@ -175,20 +179,19 @@ em-emoji-picker {
     }
 }
 
-#selectUserModal {
+#selectUserModal, #profileModal {
     display: none;
     flex-direction: column;
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: #222;
+    background: #181818;
     border-radius: 4px;
     padding: 8px;
-    gap: 8px;
-    min-width: 250px;
+    min-width: 300px;
     width: 50%;
-    height: 50%;
+    height: 60%;
     overflow-y: auto;
     box-shadow: 0 0 16px 0 #aaa;
 
@@ -237,7 +240,13 @@ em-emoji-picker {
 
         <div style="flex-grow: 1;"></div>
 
-        <p id="myStatus">Status: {{ current_user.status or "not set" }}</p>
+        <button id="profileButton">
+            <img src="{{ current_user.photo_url }}" />
+            <div>
+                <p>{{ current_user.name }}</p>
+                <p style="color: #aaa; margin-top: 4px;">{{ current_user.status or "not set" }}</p>
+            </div>
+        </button>
     </div>
     <div id="chat">
         <div id="chatHeader">
@@ -260,7 +269,7 @@ em-emoji-picker {
         <input id="chatInput" type="text" placeholder="Abc..." style="margin: 16px;" />
     </div>
 
-    <div id="selectUserModal">
+    <div id="selectUserModal" style="gap: 8px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
             <p style="color: white;">Select a user to DM</p>
             <button id="closeSelectUserModalButton">❌</button>
@@ -268,6 +277,27 @@ em-emoji-picker {
         {% for user in users %}
         <button data-user-id="{{ user.uid }}">{{ user.name }}</button>
         {% endfor %}
+    </div>
+
+    <div id="profileModal">
+        <div style="display: flex; align-items: center; gap: 8px;">
+            <h3 style="color: white;">Your profile</h3>
+            <div style="flex-grow: 1;"></div>
+            <button id="saveProfileButton">Save ✅</button>
+            <button id="closeProfileModalButton">❌</button>
+        </div>
+        <p style="margin-top: 16px; color: #aaa;">Status</p>
+        <input id="statusInput" style="margin-top: 4px;" type="text" placeholder="working, vacation, etc." value="{{ current_user.status }}" />
+        <p style="margin-top: 16px; color: #aaa;">Name</p>
+        <input id="nameInput" style="margin-top: 4px;" type="text" placeholder="John Doe" value="{{ current_user.name }}" />
+        <p style="margin-top: 16px; color: #aaa;">Photo URL</p>
+        <input id="photoUrlInput" style="margin-top: 4px;" type="text" placeholder="https://example.com/photo.jpg" value="{{ current_user.photo_url }}" />
+        <div style="margin-top: 16px; display: flex; align-items: center; gap: 8px;">
+            <input id="aiEnabledInput" style="width: 20px; height: 20px;" type="checkbox" {{ "checked" if current_user.ai_enabled else "" }} />
+            <p style="color: #aaa;">Enable AI to talk on your behalf</p>
+        </div>
+        <p style="margin-top: 16px; color: #aaa;">Prompt</p>
+        <textarea id="promptInput" style="margin-top: 4px; width: 100%; min-height: 200px; resize: none;" placeholder="Write a prompt for your AI to follow">{{ current_user.prompt }}</textarea>
     </div>
 </body>
 
@@ -280,7 +310,6 @@ const messages = JSON.parse('{{ messages | tojson | safe }}');
 
 const queryParams = new URLSearchParams(window.location.search);
 const threadId = parseInt(queryParams.get("thread_id"));
-console.log(threadId);
 
 import * as emojiMart from "https://cdn.jsdelivr.net/npm/emoji-mart@5.6.0/+esm";
 let messageIdOfReaction;
@@ -355,6 +384,26 @@ closeSelectUserModalButton.onclick = () => {
     selectUserModal.style.display = "none";
 }
 
+profileButton.onclick = () => {
+    profileModal.style.display = "flex";
+}
+
+saveProfileButton.onclick = () => {
+    post("/users/update", {
+        status: statusInput.value,
+        name: nameInput.value,
+        photo_url: photoUrlInput.value,
+        ai_enabled: aiEnabledInput.checked,
+        prompt: promptInput.value,
+    }).then(() => {
+        location.reload();
+    });
+}
+
+closeProfileModalButton.onclick = () => {
+    profileModal.style.display = "none";
+}
+
 document.querySelectorAll(".dmButton").forEach(button => {
     button.onclick = () => {
         const dmId = button.getAttribute("data-dm-id");
@@ -405,14 +454,6 @@ chatInput.onkeydown = (event) => {
             content: content
         });
     }
-}
-
-myStatus.onclick = () => {
-    const status = prompt("Enter status");
-    if (!status) return;
-    post("/users/update", { status }).then(() => {
-        myStatus.textContent = `Status: ${status}`;
-    });
 }
 
 function renderReactions(reactions) {

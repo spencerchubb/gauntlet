@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime
 from typing import Annotated
@@ -9,6 +10,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, field_serializer
 from sqlmodel import create_engine, delete, Field, func, select, Session, SQLModel, text, update
+
+from completion import bedrock_completion
 
 JwtCookie = Annotated[str | None, Cookie()]
 
@@ -47,6 +50,8 @@ class User(SQLModel, table=True):
     name: str
     photo_url: str
     status: str | None = Field(default=None)
+    ai_enabled: bool = Field(default=False)
+    prompt: str | None = Field(default=None)
 
 engine = create_engine("sqlite:///db.sqlite3")
 SQLModel.metadata.create_all(engine)
@@ -203,7 +208,8 @@ def update_channel(req: Request, body: UpdateChannelBody):
     with Session(engine) as session:
         session.exec(update(Channel).where(Channel.channel_id == body.channel_id).values(name=body.name))
         session.commit()
-
+# https://pbs.twimg.com/profile_images/1608281295918096385/D2kh-M28_400x400.jpg
+# Austen Allred is the co-founder and CEO of BloomTech. A native of Springville, Utah, Austen’s start-up journey began in 2017 with him living in his two-door Civic while participating in Y Combinator, a San Francisco-based seed accelerator. This experience became the foundation of BloomTech’s rapid growth. Before founding BloomTech, Austen was the co-founder of media platform GrassWire. He co-authored the growth hacking textbook Secret Sauce, which became a best-seller and provided him the personal seed money to build BloomTech. Austen’s disruptive ideas on the future of education, the labor market disconnect, and the opportunity of providing opportunity at-scale have been featured in: The Harvard Business Review, The Economist, WIRED, Fast Company, TechCrunch, The New York Times, among others. Austen is fluent in Russian and currently lives in San Francisco with his wife and two kids. You can find him on Twitter @Austen.
 class DeleteChannelBody(BaseModel):
     channel_id: int
 
@@ -233,13 +239,34 @@ def create_dm(req: Request, body: CreateDmBody, jwt: JwtCookie = None):
         session.add(dm)
         session.commit()
         return {"dm_id": dm.dm_id}
+
+async def create_ai_message(dm_id: int, uid: str):
+    print("create_ai_message", dm_id, uid)
+    with Session(engine) as session:
+        dm = session.exec(select(Dm).where(Dm.dm_id == dm_id).where(Dm.uid != uid)).first()
+        sender = session.exec(select(User).where(User.uid == dm.uid)).first()
+        if not sender.ai_enabled:
+            return
+        print("The user has AI enabled!")
+        messages = session.exec(select(Message).where(Message.dm_id == dm_id)).all()
+        system_prompt = f"Your job is to respond to Slack messages on behalf of {sender.name}. Be concise and to the point.\n\nHere is the prompt that {sender.name} has provided for you: {sender.prompt}"
+        messages = [{"role": "user" if message.uid == uid else "assistant", "content": message.content} for message in messages]
+        ai_response = bedrock_completion(system_prompt, messages)
+        ai_response = ai_response.replace("’", "'") # Replace weird apostrophes so it doesn't break JSON
+        ai_response = Message(channel_id=None, dm_id=dm_id, thread_id=None, uid=sender.uid, content=ai_response)
+        session.add(ai_response)
+        session.commit()
+
+        session.refresh(ai_response)
+        session.refresh(sender)
+        await send_websocket_messages(session, ai_response, {"endpoint": "/messages/create", "message": ai_response.model_dump(), "sender": sender.model_dump()})
     
 class CreateMessageBody(BaseModel):
     channel_id: int | None = None
     dm_id: int | None = None
     thread_id: int | None = None
     content: str
-
+    
 @app.post("/messages/create")
 async def create_message(req: Request, body: CreateMessageBody, jwt: JwtCookie = None):
     try:
@@ -258,6 +285,10 @@ async def create_message(req: Request, body: CreateMessageBody, jwt: JwtCookie =
 
         payload = {"endpoint": "/messages/create", "message": message.model_dump(), "sender": sender.model_dump()}
         await send_websocket_messages(session, message, payload)
+
+    if body.dm_id:
+        # Run without blocking the above websockets
+        asyncio.create_task(create_ai_message(body.dm_id, uid))
 
 class CreateReactionBody(BaseModel):
     message_id: int
@@ -284,6 +315,10 @@ async def create_reaction(req: Request, body: CreateReactionBody, jwt: JwtCookie
 
 class UpdateUserBody(BaseModel):
     status: str | None = None
+    name: str | None = None
+    photo_url: str | None = None
+    ai_enabled: bool | None = None
+    prompt: str | None = None
 
 @app.post("/users/update")
 def update_user(req: Request, body: UpdateUserBody, jwt: JwtCookie = None):
@@ -293,7 +328,7 @@ def update_user(req: Request, body: UpdateUserBody, jwt: JwtCookie = None):
         return "Unauthorized", 401
 
     with Session(engine) as session:
-        session.exec(update(User).where(User.uid == uid).values(status=body.status))
+        session.exec(update(User).where(User.uid == uid).values(status=body.status, name=body.name, photo_url=body.photo_url, ai_enabled=body.ai_enabled, prompt=body.prompt))
         session.commit()
 
 class AuthGoogleBody(BaseModel):
