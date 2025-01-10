@@ -301,12 +301,23 @@ em-emoji-picker {
     </div>
 </body>
 
+<script id="pageData" type="application/json">
+{
+    "channels": {{ channels | tojson | safe }},
+    "currentChannel": {{ current_channel | tojson | safe }},
+    "currentDm": {{ current_dm | tojson | safe }},
+    "currentThread": {{ current_thread | tojson | safe }},
+    "messages": {{ messages | tojson | safe }}
+}
+</script>
+
 <script type="module">
-const channels = JSON.parse('{{ channels | tojson | safe }}');
-const currentChannel = JSON.parse('{{ current_channel | tojson | safe }}');
-const currentDm = JSON.parse('{{ current_dm | tojson | safe }}');
-const currentThread = JSON.parse('{{ current_thread | tojson | safe }}');
-const messages = JSON.parse('{{ messages | tojson | safe }}');
+const pageData = JSON.parse(document.getElementById("pageData").textContent);
+const channels = pageData.channels;
+const currentChannel = pageData.currentChannel;
+const currentDm = pageData.currentDm;
+const currentThread = pageData.currentThread;
+const messages = pageData.messages;
 
 const queryParams = new URLSearchParams(window.location.search);
 const threadId = parseInt(queryParams.get("thread_id"));
