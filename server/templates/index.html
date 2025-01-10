@@ -484,7 +484,8 @@ function renderMessage(message, sender) {
 messages.forEach(message => renderMessage(message.message, message.sender));
 chatBody.scrollTop = chatBody.scrollHeight;
 
-const ws = new WebSocket(`ws://${location.host}/ws`);
+const wsUrl = location.protocol === "https:" ? `wss://${location.host}/ws` : `ws://${location.host}/ws`;
+const ws = new WebSocket(wsUrl);
 ws.onmessage = async function(event) {
     const data = JSON.parse(event.data);
     console.log("Received message", data);
