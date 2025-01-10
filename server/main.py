@@ -59,7 +59,7 @@ SQLModel.metadata.create_all(engine)
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://pandapal.net", "https://pandapal.app", "http://localhost", "http://localhost:8000"],
+    allow_origins=["https://gauntlet.spencerchubb.com", "http://localhost:8000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
