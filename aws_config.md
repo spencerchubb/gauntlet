@@ -38,7 +38,8 @@ If my configuration gets deleted for some reason, I can use these notes to recre
             "HEAD"
         ],
         "AllowedOrigins": [
-            "http://localhost:8000"
+            "http://localhost:8000",
+            "https://gauntlet.spencerchubb.com"
         ],
         "ExposeHeaders": [
             "ETag"
@@ -47,3 +48,11 @@ If my configuration gets deleted for some reason, I can use these notes to recre
     }
 ]
 ```
+
+### EC2 Instance
+- Name: spencer-chubb-ec2
+- OS: Ubuntu 24.04
+- Instance type: t3.micro
+- Key pair: spencer-chubb-key
+- Security group: launch-wizard-1
+- Storage: default
