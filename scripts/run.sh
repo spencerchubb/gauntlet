@@ -27,7 +27,6 @@ version=$1 # 'dev' or 'prod'
 if [ "$version" == "dev" ]; then
     # We use localhost because 127.0.0.1 doesn't work with google auth
     fastapi dev main.py --host localhost
-    # uvicorn main:app --reload --reload-delay 1 --port 8000 --host localhost
 elif [ "$version" == "prod" ]; then
     kill_port 443
 

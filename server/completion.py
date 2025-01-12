@@ -1,6 +1,4 @@
-import json
-from typing import List, Literal
-from pydantic import BaseModel
+from typing import List
 
 import boto3
 bedrock_runtime = boto3.client(

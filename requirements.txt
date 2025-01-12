@@ -6,3 +6,10 @@ openai
 requests
 sqlmodel
 websockets
+
+# For RAG
+fastembed
+langchain-aws
+langchain-qdrant
+langchain-community
+qdrant-client

@@ -8,10 +8,12 @@ from fastapi import Cookie, FastAPI, Request, Response, WebSocket, WebSocketDisc
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from langchain_core.documents import Document
 from pydantic import BaseModel, field_serializer
 from sqlmodel import create_engine, delete, Field, func, select, Session, SQLModel, text, update
 
 from completion import bedrock_completion
+from rag import add_documents, similarity_search
 
 JwtCookie = Annotated[str | None, Cookie()]
 
@@ -35,6 +37,7 @@ class Message(SQLModel, table=True):
     created: datetime | None = Field(default_factory=lambda: datetime.now())
     content: str
     reactions: str | None = Field(default=None)
+    # vector_store_id: str
     
     @field_serializer("created")
     def serialize_created(self, created: datetime) -> str:
@@ -79,6 +82,9 @@ def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm
 
         with Session(engine) as session:
             # Add mock data if it doesn't exist
+            if not session.exec(select(User).where(User.uid == "gauntlet-bot")).first():
+                session.add(User(uid="gauntlet-bot", name="Gauntlet Bot", email="gauntlet@gauntletai.com", photo_url="/static/gauntlet_logo.png"))
+                session.commit()
             if not session.exec(select(User).where(User.name == "Kamala Harris")).first():
                 session.add(User(uid="a", name="Kamala Harris", email="kamala@gauntletai.com", photo_url="https://pbs.twimg.com/profile_images/1592241313700782081/T2pTYU8d_400x400.jpg"))
                 session.commit()
@@ -241,6 +247,44 @@ def create_dm(req: Request, body: CreateDmBody, jwt: JwtCookie = None):
         session.commit()
         return {"dm_id": dm.dm_id}
 
+async def index_message(message: Message):
+    # Add document to vector store
+    ids = add_documents([Document(page_content=message.content, metadata={"uid": message.uid})])
+
+    # Save the id so we can associate regular messages with vector store
+    with(engine) as session:
+        message.vector_store_id = ids[0]
+        session.commit()
+
+class CreateMessageBody(BaseModel):
+    channel_id: int | None = None
+    dm_id: int | None = None
+    thread_id: int | None = None
+    content: str
+
+async def create_gauntlet_bot_message(body: CreateMessageBody) -> str:
+    docs = similarity_search(body.content)
+    print(docs)
+    prompt = f"""You are a helpful assistant.
+
+Use the retrieved context to answer questions. If the context does not contain the answer, say you don't know.
+
+### Retrieved context:"""
+    for i, doc in enumerate(docs):
+        prompt += f"\n{i+1}. {doc}"
+    bot_response = bedrock_completion(prompt, [{"role": "user", "content": body.content}])
+    print(bot_response)
+
+    with Session(engine) as session:
+        uid = "gauntlet-bot"
+        sender = session.exec(select(User).where(User.uid == uid)).first()
+        message = Message(channel_id=body.channel_id, dm_id=body.dm_id, thread_id=body.thread_id, uid=uid, content=bot_response)
+        session.add(message)
+        session.commit()
+        session.refresh(message)
+        session.refresh(sender)
+        await send_websocket_messages(session, message, {"endpoint": "/messages/create", "message": message.model_dump(), "sender": sender.model_dump()})
+
 async def create_ai_message(dm_id: int, uid: str):
     print("create_ai_message", dm_id, uid)
     with Session(engine) as session:
@@ -260,12 +304,7 @@ async def create_ai_message(dm_id: int, uid: str):
         session.refresh(ai_response)
         session.refresh(sender)
         await send_websocket_messages(session, ai_response, {"endpoint": "/messages/create", "message": ai_response.model_dump(), "sender": sender.model_dump()})
-    
-class CreateMessageBody(BaseModel):
-    channel_id: int | None = None
-    dm_id: int | None = None
-    thread_id: int | None = None
-    content: str
+        # asyncio.create_task(index_message(ai_response))
     
 @app.post("/messages/create")
 async def create_message(req: Request, body: CreateMessageBody, jwt: JwtCookie = None):
@@ -285,9 +324,12 @@ async def create_message(req: Request, body: CreateMessageBody, jwt: JwtCookie =
 
         payload = {"endpoint": "/messages/create", "message": message.model_dump(), "sender": sender.model_dump()}
         await send_websocket_messages(session, message, payload)
+        # asyncio.create_task(index_message(message))
+    
+    if "@bot" in body.content:
+        asyncio.create_task(create_gauntlet_bot_message(body))
 
     if body.dm_id:
-        # Run without blocking the above websockets
         asyncio.create_task(create_ai_message(body.dm_id, uid))
 
 class CreateReactionBody(BaseModel):

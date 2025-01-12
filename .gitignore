@@ -1,4 +1,6 @@
+rag_data/
 node_modules/
+qdrant_db/
 __pycache__/
 .venv/
 .env
