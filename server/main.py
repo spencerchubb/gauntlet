@@ -447,7 +447,7 @@ Do NOT express uncertainty, NEVER say you don't know something.
     prompt = f"""### Instructions
 You are a question-answering assistant. You will be given a question and context.
 For questions involving dates or times, give absolute answers instead of relative answers if possible (e.g. "3pm" instead of "in 2 hours").
-Answer the question ONLY using the context. If the context does not contain the answer, say "I don't know".
+Answer the question using the context provided.
 
 ### Question
 {question}
