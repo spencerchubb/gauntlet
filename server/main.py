@@ -2,9 +2,12 @@ import asyncio
 import json
 from datetime import datetime
 from typing import Annotated, List
+import tempfile
+import os
 
 import boto3
-from fastapi import Cookie, FastAPI, Request, Response, WebSocket, WebSocketDisconnect
+import openai
+from fastapi import Cookie, FastAPI, Request, Response, WebSocket, WebSocketDisconnect, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -13,6 +16,8 @@ from sqlmodel import create_engine, delete, Field, func, select, Session, SQLMod
 
 from completion import bedrock_completion
 from rag import add_documents, similarity_search
+
+openai_client = openai.OpenAI()
 
 JwtCookie = Annotated[str | None, Cookie()]
 
@@ -407,6 +412,24 @@ def generate_presigned_url(req: Request, filename: str, method: str, jwt: JwtCoo
         HttpMethod=method.upper(),
     )
     return {"url": url}
+
+@app.post("/stt")
+async def stt(file: UploadFile):
+    # Create a temporary file to store the audio
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
+        contents = await file.read()
+        temp_file.write(contents)
+        temp_file.flush()
+        
+        # Use the temporary file for transcription
+        transcription = openai_client.audio.transcriptions.create(
+            model="whisper-1", 
+            file=open(temp_file.name, 'rb')
+        )
+    
+    # Clean up the temporary file
+    os.unlink(temp_file.name)
+    return { "text": transcription.text }
 
 async def send_websocket_messages(session, message, payload):
     # If neither channel_id nor dm_id are populated, we're in a thread.

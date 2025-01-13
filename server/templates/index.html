@@ -28,6 +28,7 @@ input, textarea {
     background: #333;
     font-size: 16px;
     color: white;
+    width: 100%;
 
     &:focus {
         outline: solid 1px #aaa;
@@ -179,6 +180,23 @@ em-emoji-picker {
     }
 }
 
+#micButton {
+    width: 40px;
+    height: 40px;
+    background: none;
+    border: solid 1px #555;
+    border-radius: 4px;
+    padding: 4px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+
+    &:hover {
+        background: #444;
+    }
+}
+
 #selectUserModal, #profileModal {
     display: none;
     flex-direction: column;
@@ -224,6 +242,16 @@ em-emoji-picker {
     border-radius: 4px;
     color: white;
     background: #222;
+}
+
+.pulsate {
+    animation: pulsate 1s infinite ease-in-out;
+}
+
+@keyframes pulsate {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
 }
 </style>
 
@@ -278,7 +306,16 @@ em-emoji-picker {
             {% endif %}
         </div>
         <div id="chatBody"></div>
-        <input id="chatInput" type="text" placeholder="Abc..." style="margin: 16px;" />
+        <div style="display: flex; gap: 8px; margin: 0 16px 16px 16px;">
+            <input id="chatInput" type="text" placeholder="Abc..." />
+            <button id="micButton">
+                <svg viewBox="0 0 100 100" stroke="#ddd">
+                    <path d="M 50,15 v 30" stroke-width="30" stroke-linecap="round" />
+                    <path d="M 20,45 a 3,3 0,0,0 60,0" fill="none" stroke-width="10" stroke-linecap="round" />
+                    <path d="M 50,100 v -25" stroke-width="10" />
+                </svg>
+            </button>
+        </div>
     </div>
 
     <div id="selectUserModal" style="gap: 8px;">
@@ -463,6 +500,70 @@ document.body.onclick = (event) => {
     const pickerIsClicked = event.target.closest("em-emoji-picker") === picker;
     if (pickerIsShowing && !pickerIsClicked) {
         hidePicker();
+    }
+}
+
+class Microphone {
+    constructor() {
+        this.mediaRecorder = null;
+        this.audioChunks = [];
+    }
+
+    start(callback) {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+                this.mediaRecorder = new MediaRecorder(stream);
+                this.audioChunks = [];
+                
+                this.mediaRecorder.ondataavailable = (event) => {
+                    this.audioChunks.push(event.data);
+                };
+
+                this.mediaRecorder.start();
+                callback();
+            });
+    }
+
+    stop(callback) {
+        if (!this.mediaRecorder) return;
+
+        this.mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+            callback(audioBlob);
+            this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        };
+
+        this.mediaRecorder.stop();
+    }
+}
+
+const microphone = new Microphone();
+
+let speaking = false;
+let micIcon = micButton.innerHTML;
+micButton.onclick = () => {
+    speaking = !speaking;
+    console.log("Speaking:", speaking);
+
+    if (speaking) {
+        microphone.start(() => {
+            micButton.innerHTML = "<div class='pulsate' style='width: 20px; height: 20px; background: #ccc; border-radius: 50%;'></div>";
+        });
+    } else {
+        micButton.innerHTML = micIcon;
+        microphone.stop(audioBlob => {
+            const formData = new FormData();
+            formData.append('file', audioBlob, 'audio.wav');
+
+            fetch("/stt", {
+                method: "POST",
+                body: formData,
+            })
+                .then(res => res.json())
+                .then(data => {
+                    chatInput.value += data.text;
+                });
+        });
     }
 }
 
