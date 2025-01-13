@@ -213,6 +213,18 @@ em-emoji-picker {
         }
     }
 }
+
+.toast {
+    position: absolute;
+    bottom: 64px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 8px;
+    border: solid 1px lightgreen;
+    border-radius: 4px;
+    color: white;
+    background: #222;
+}
 </style>
 
 <body>
@@ -457,6 +469,7 @@ document.body.onclick = (event) => {
 chatInput.onkeydown = (event) => {
     if (event.key === "Enter") {
         const content = chatInput.value;
+        if (!content) return;
         chatInput.value = "";
         post("/messages/create", {
             channel_id: currentChannel?.channel_id,
@@ -489,7 +502,25 @@ function renderMessage(message, sender) {
         <button class="messageThreadButton iconButton" data-message-id="${message.message_id}">🧵</button>
     </div>
     <div class="messageReactions">${renderReactions(message.reactions ?? {})}</div>`;
+
+    // Check if user was already scrolled to bottom before appending
+    const wasAtBottom = chatBody.scrollHeight - chatBody.clientHeight <= chatBody.scrollTop + 1;
+    
     chatBody.appendChild(messageElement);
+
+    if (wasAtBottom) {
+        // User was at bottom, scroll to bottom again
+        chatBody.scrollTop = chatBody.scrollHeight;
+    } else {
+        // User was scrolled up, show toast notification
+        const toast = document.createElement("p");
+        toast.classList.add("toast");
+        toast.textContent = `New message: ${message.content.length < 20 ? message.content : message.content.slice(0, 20) + "..."}`;
+        document.body.appendChild(toast);
+        
+        // Remove toast after 3 seconds
+        setTimeout(() => toast.remove(), 3000);
+    }
 }
 
 messages.forEach(message => renderMessage(message.message, message.sender));
