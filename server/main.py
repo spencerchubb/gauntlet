@@ -1,14 +1,13 @@
 import asyncio
 import json
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, List
 
 import boto3
 from fastapi import Cookie, FastAPI, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from langchain_core.documents import Document
 from pydantic import BaseModel, field_serializer
 from sqlmodel import create_engine, delete, Field, func, select, Session, SQLModel, text, update
 
@@ -247,14 +246,13 @@ def create_dm(req: Request, body: CreateDmBody, jwt: JwtCookie = None):
         session.commit()
         return {"dm_id": dm.dm_id}
 
-async def index_message(message: Message):
-    # Add document to vector store
-    ids = add_documents([Document(page_content=message.content, metadata={"uid": message.uid})])
+# async def index_message(message: Message):
+#     # TODO: Add document to vector store
 
-    # Save the id so we can associate regular messages with vector store
-    with(engine) as session:
-        message.vector_store_id = ids[0]
-        session.commit()
+#     # Save the id so we can associate regular messages with vector store
+#     with(engine) as session:
+#         message.vector_store_id = ids[0]
+#         session.commit()
 
 class CreateMessageBody(BaseModel):
     channel_id: int | None = None
@@ -263,22 +261,12 @@ class CreateMessageBody(BaseModel):
     content: str
 
 async def create_gauntlet_bot_message(body: CreateMessageBody) -> str:
-    docs = similarity_search(body.content)
-    print(docs)
-    prompt = f"""You are a helpful assistant.
-
-Use the retrieved context to answer questions. If the context does not contain the answer, say you don't know.
-
-### Retrieved context:"""
-    for i, doc in enumerate(docs):
-        prompt += f"\n{i+1}. {doc}"
-    bot_response = bedrock_completion(prompt, [{"role": "user", "content": body.content}])
-    print(bot_response)
+    rag_output = answer_with_rag(body.content)
 
     with Session(engine) as session:
         uid = "gauntlet-bot"
         sender = session.exec(select(User).where(User.uid == uid)).first()
-        message = Message(channel_id=body.channel_id, dm_id=body.dm_id, thread_id=body.thread_id, uid=uid, content=bot_response)
+        message = Message(channel_id=body.channel_id, dm_id=body.dm_id, thread_id=body.thread_id, uid=uid, content=rag_output.answer)
         session.add(message)
         session.commit()
         session.refresh(message)
@@ -286,13 +274,11 @@ Use the retrieved context to answer questions. If the context does not contain t
         await send_websocket_messages(session, message, {"endpoint": "/messages/create", "message": message.model_dump(), "sender": sender.model_dump()})
 
 async def create_ai_message(dm_id: int, uid: str):
-    print("create_ai_message", dm_id, uid)
     with Session(engine) as session:
         dm = session.exec(select(Dm).where(Dm.dm_id == dm_id).where(Dm.uid != uid)).first()
         sender = session.exec(select(User).where(User.uid == dm.uid)).first()
         if not sender.ai_enabled:
             return
-        print("The user has AI enabled!")
         messages = session.exec(select(Message).where(Message.dm_id == dm_id)).all()
         system_prompt = f"Your job is to respond to Slack messages on behalf of {sender.name}. Be concise and to the point.\n\nHere is the prompt that {sender.name} has provided for you: {sender.prompt}"
         messages = [{"role": "user" if message.uid == uid else "assistant", "content": message.content} for message in messages]
@@ -438,3 +424,42 @@ async def send_websocket_messages(session, message, payload):
             if recipient.uid not in websockets:
                 continue
             await websockets[recipient.uid].send_json(payload)
+
+class RagOutput(BaseModel):
+    answer: str
+    docs: List[str]
+
+def answer_with_rag(question: str) -> str:
+    hypothetical_document = bedrock_completion(
+        """You are a question answering assistant for Gauntlet AI, an intensive AI training program for engineers.
+Answer length MUST be 1 sentence to 1 paragraph in length. Answer questions with a decisive and convincing answer.
+Do NOT express uncertainty, NEVER say you don't know something.
+""",
+        [{"role": "user", "content": question}],
+        "llama3-2-3b",
+    )
+    hypothetical_document = f"\n{hypothetical_document}"
+
+    context = ""
+    docs = similarity_search(question + hypothetical_document)
+    for i, doc in enumerate(docs):
+        context += f"\n{i + 1} {doc}"
+    prompt = f"""### Instructions
+You are a question-answering assistant. You will be given a question and context.
+For questions involving dates or times, give absolute answers instead of relative answers if possible (e.g. "3pm" instead of "in 2 hours").
+Answer the question ONLY using the context. If the context does not contain the answer, say "I don't know".
+
+### Question
+{question}
+
+### Context
+{context}
+
+### Answer
+"""
+    answer = bedrock_completion(
+        "You are a question-answering assistant.",
+        [{"role": "user", "content": prompt}],
+        "llama3-3-70b",
+    )
+    return RagOutput(answer=answer, docs=docs)

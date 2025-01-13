@@ -1,11 +1,12 @@
 import os
 
-from langchain_aws import BedrockEmbeddings
-from langchain_core.documents import Document
-from langchain_qdrant import FastEmbedSparse, RetrievalMode, QdrantVectorStore
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import Distance, FieldCondition, Filter, MatchValue, SparseVectorParams, VectorParams
+from qdrant_client.http.models import FieldCondition, Filter, MatchValue
 from typing import List
+
+dense_model = "sentence-transformers/all-MiniLM-L6-v2"
+sparse_model = "Qdrant/bm25"
+collection_name = f"gauntlet-bot"
 
 client = None
 def init():
@@ -15,40 +16,39 @@ def init():
     
     # Local
     # client = QdrantClient(path="qdrant_db")
+    # client = QdrantClient(":memory:")
 
     # Cloud
     url="https://873902b1-f25a-4641-86e3-feff2cf9010b.us-east4-0.gcp.cloud.qdrant.io:6333"
     client = QdrantClient(url=url, api_key=os.getenv("QDRANT_API_KEY"))
+
+    client.set_model(dense_model)
+    client.set_sparse_model(sparse_model)
         
-    if not client.collection_exists(collection_name="my_collection"):
+    if not client.collection_exists(collection_name=collection_name):
         client.create_collection(
-            collection_name="my_collection", 
-            vectors_config=VectorParams(size=1024, distance=Distance.COSINE),
-            sparse_vectors_config={"langchain-sparse": SparseVectorParams()},
+            collection_name=collection_name, 
+            vectors_config=client.get_fastembed_vector_params(),
+            sparse_vectors_config=client.get_fastembed_sparse_vector_params(), 
         )
 init()
 
-embeddings = BedrockEmbeddings(model_id="amazon.titan-embed-text-v2:0", region_name="us-east-2")
-sparse_embeddings = FastEmbedSparse(model_name="Qdrant/bm25")
-
-vector_store = QdrantVectorStore(
-    client=client,
-    embedding=embeddings,
-    sparse_embedding=sparse_embeddings,
-    collection_name="my_collection",
-
-    # Uses a hybrid of semantic search and keyword search for more accuracy
-    retrieval_mode=RetrievalMode.HYBRID,
-)
-
 def add_documents(docs):
-    if type(docs[0]) == str:
-        docs = [Document(page_content=doc) for doc in docs]
-    return vector_store.add_documents(docs)
+    client.add(
+        collection_name=collection_name,
+        documents=docs,
+        parallel=8,
+    )
 
 def similarity_search(query: str, uid: str | None = None) -> List[str]:
     filter = Filter(must=[
         FieldCondition(key="metadata.uid", match=MatchValue(value=uid)),
     ]) if uid else None
-    docs = vector_store.similarity_search(query, filter=filter)
-    return [doc.page_content for doc in docs]
+
+    docs = client.query(
+        collection_name=collection_name,
+        query_text=query,
+        query_filter=filter,
+        limit=4,
+    )
+    return [doc.document for doc in docs]

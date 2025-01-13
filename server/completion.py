@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Literal
 
 import boto3
 bedrock_runtime = boto3.client(
@@ -6,11 +6,13 @@ bedrock_runtime = boto3.client(
   region_name='us-east-2',
 )
 
-def bedrock_completion(system_prompt: str, messages: List[dict]):
+ModelId = Literal["llama3-2-3b", "llama3-2-11b", "llama3-3-70b"]
+
+def bedrock_completion(system_prompt: str, messages: List[dict], model_id: ModelId = "llama3-2-11b"):
   for message in messages:
     message["content"] = [{"text": message["content"]}]
   response = bedrock_runtime.converse(
-    modelId="arn:aws:bedrock:us-east-2:474668398195:inference-profile/us.meta.llama3-2-3b-instruct-v1:0",
+    modelId=f"arn:aws:bedrock:us-east-2:474668398195:inference-profile/us.meta.{model_id}-instruct-v1:0",
     messages=messages,
     system=[{"text": system_prompt}],
     inferenceConfig={
