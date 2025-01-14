@@ -12,3 +12,9 @@ fastembed
 langchain-community
 qdrant-client
 transformers
+
+# Sentence tokenizer
+nltk
+
+# For TTS
+fish-audio-sdk

@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 from datetime import datetime
 from typing import Annotated, List
@@ -11,12 +12,15 @@ from fastapi import Cookie, FastAPI, Request, Response, WebSocket, WebSocketDisc
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fish_audio_sdk import Session as FishSession, TTSRequest
+from fish_audio_sdk.schemas import Prosody
 from pydantic import BaseModel, field_serializer
 from sqlmodel import create_engine, delete, Field, func, select, Session, SQLModel, text, update
 
 from completion import bedrock_completion
 from rag import add_documents, similarity_search
 
+fish_client = FishSession(apikey=os.getenv("FISH_KEY"))
 openai_client = openai.OpenAI()
 
 JwtCookie = Annotated[str | None, Cookie()]
@@ -219,8 +223,7 @@ def update_channel(req: Request, body: UpdateChannelBody):
     with Session(engine) as session:
         session.exec(update(Channel).where(Channel.channel_id == body.channel_id).values(name=body.name))
         session.commit()
-# https://pbs.twimg.com/profile_images/1608281295918096385/D2kh-M28_400x400.jpg
-# Austen Allred is the co-founder and CEO of BloomTech. A native of Springville, Utah, Austen’s start-up journey began in 2017 with him living in his two-door Civic while participating in Y Combinator, a San Francisco-based seed accelerator. This experience became the foundation of BloomTech’s rapid growth. Before founding BloomTech, Austen was the co-founder of media platform GrassWire. He co-authored the growth hacking textbook Secret Sauce, which became a best-seller and provided him the personal seed money to build BloomTech. Austen’s disruptive ideas on the future of education, the labor market disconnect, and the opportunity of providing opportunity at-scale have been featured in: The Harvard Business Review, The Economist, WIRED, Fast Company, TechCrunch, The New York Times, among others. Austen is fluent in Russian and currently lives in San Francisco with his wife and two kids. You can find him on Twitter @Austen.
+
 class DeleteChannelBody(BaseModel):
     channel_id: int
 
@@ -414,7 +417,12 @@ def generate_presigned_url(req: Request, filename: str, method: str, jwt: JwtCoo
     return {"url": url}
 
 @app.post("/stt")
-async def stt(file: UploadFile):
+async def stt(file: UploadFile, jwt: JwtCookie = None):
+    try:
+        uid = auth.verify_session_cookie(jwt, check_revoked=True)["uid"]
+    except Exception as e:
+        return "Unauthorized", 401
+
     # Create a temporary file to store the audio
     with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
         contents = await file.read()
@@ -430,6 +438,44 @@ async def stt(file: UploadFile):
     # Clean up the temporary file
     os.unlink(temp_file.name)
     return { "text": transcription.text }
+
+class TtsBody(BaseModel):
+    text: str
+
+import nltk
+from nltk.tokenize import PunktTokenizer
+nltk.download("punkt_tab")
+sentence_tokenizer = PunktTokenizer()
+
+@app.post("/tts")
+async def tts(body: TtsBody, jwt: JwtCookie = None):
+    try:
+        uid = auth.verify_session_cookie(jwt, check_revoked=True)["uid"]
+    except Exception as e:
+        return "Unauthorized", 401
+    
+    reference_ids = {
+        "Austen Allred": "94b510e7818847e3804c5b4050d3c70d",
+    }
+    websocket = websockets[uid]
+
+    sentences = sentence_tokenizer.tokenize(body.text.strip())
+    import time
+    start = time.time()
+    first_audio = None
+    for sentence in sentences:
+        chunk_total = b""
+        for chunk in fish_client.tts(TTSRequest(
+            reference_id=reference_ids["Austen Allred"],
+            text=sentence,
+            format="wav",
+            prosody=Prosody(speed=1.15),
+        )):
+            chunk_total += chunk
+        if not first_audio:
+            first_audio = time.time()
+        audio_str = f"data:audio/wav;base64,{base64.b64encode(chunk_total).decode('utf-8')}"
+        await websocket.send_json({"endpoint": "/tts", "audio": audio_str})
 
 async def send_websocket_messages(session, message, payload):
     # If neither channel_id nor dm_id are populated, we're in a thread.
