@@ -636,7 +636,9 @@ function renderReactions(reactions) {
     return Object.entries(reactions).map(([reaction, count]) => `<p>${count} ${reaction}</p>`).join("");
 }
 
-function renderMessage(message, sender) {
+function renderMessage(data) {
+    let { message, sender } = data;
+
     const messageElement = document.createElement("div");
     messageElement.classList.add("message");
     messageElement.setAttribute("data-message-id", message.message_id);
@@ -680,7 +682,7 @@ function renderMessage(message, sender) {
     }
 }
 
-messages.forEach(message => renderMessage(message.message, message.sender));
+messages.forEach(message => renderMessage(message));
 chatBody.scrollTop = chatBody.scrollHeight;
 
 let audioElement = new Audio();
@@ -732,12 +734,13 @@ ws.onmessage = async function(event) {
     console.log("Received message", data);
 
     if (data.endpoint === "/messages/create") {
+        messages.push(data);
         if (data.message.channel_id && currentChannel?.channel_id && data.message.channel_id === currentChannel?.channel_id) {
-            renderMessage(data.message, data.sender);
+            renderMessage(data);
         } else if (data.message.dm_id && currentDm?.dm_id && data.message.dm_id === currentDm?.dm_id) {
-            renderMessage(data.message, data.sender);
+            renderMessage(data);
         } else if (data.message.thread_id && threadId && data.message.thread_id === threadId) {
-            renderMessage(data.message, data.sender);
+            renderMessage(data);
         }
     } else if (data.endpoint === "/reactions/create") {
         const reactions = document.querySelector(`[data-message-id="${data.message_id}"] > .messageReactions`);

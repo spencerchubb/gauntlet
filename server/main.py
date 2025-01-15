@@ -87,84 +87,84 @@ firebase_admin.initialize_app(cred)
 def index(req: Request, jwt: JwtCookie = None, channel_id: int | None = None, dm_id: int | None = None, thread_id: int | None = None, query: str | None = None):
     try:
         uid = auth.verify_session_cookie(jwt, check_revoked=True)["uid"]
-
-        with Session(engine) as session:
-            # Add mock data if it doesn't exist
-            if not session.exec(select(User).where(User.uid == "gauntlet-bot")).first():
-                session.add(User(uid="gauntlet-bot", name="Gauntlet Bot", email="gauntlet@gauntletai.com", photo_url="/static/gauntlet_logo.png"))
-                session.commit()
-            if not session.exec(select(User).where(User.name == "Kamala Harris")).first():
-                session.add(User(uid="a", name="Kamala Harris", email="kamala@gauntletai.com", photo_url="https://pbs.twimg.com/profile_images/1592241313700782081/T2pTYU8d_400x400.jpg"))
-                session.commit()
-            if not session.exec(select(User).where(User.name == "Donald Trump")).first():
-                session.add(User(uid="b", name="Donald Trump", email="donald@gauntletai.com", photo_url="https://pbs.twimg.com/profile_images/874276197357596672/kUuht00m_400x400.jpg"))
-                session.commit()
-
-            if query:
-                messages = session.exec(select(Message, User).where(Message.content.contains(query)).join(User, User.uid == Message.uid)).all()
-                messages = [{**message.model_dump(), **user.model_dump()} for message, user in messages]
-                return templates.TemplateResponse(req, "search.html", {
-                    "query": query,
-                    "messages": messages,
-                })
-
-            # Use raw sql because it's hard to do with sqlmodel
-            dms = session.exec(text(f"""
-                select dm1.dm_id, user.name from dm as dm1
-                join dm as dm2 on dm1.dm_id=dm2.dm_id and dm1.uid != dm2.uid
-                join user on dm2.uid=user.uid
-                where dm1.uid='{uid}'""")).all()
-            dms = [{"dm_id": dm[0], "name": dm[1]} for dm in dms]
-
-            channels = session.exec(select(Channel)).all()
-            if not channels:
-                # Create a "general" channel
-                session.add(Channel(name="general"))
-                session.commit()
-                channels = session.exec(select(Channel)).all()
-
-            current_channel = None
-            current_dm = None
-            current_thread = None
-            messages = []
-            if not channel_id and not dm_id and not thread_id:
-                channel_id = channels[0].channel_id
-
-            if channel_id:
-                current_channel = session.exec(select(Channel).where(Channel.channel_id == channel_id)).first()
-                if not current_channel:
-                    channel_id = channels[0].channel_id
-                    current_channel = session.exec(select(Channel).where(Channel.channel_id == channel_id)).first()
-                messages = session.exec(select(Message, User).where(Message.channel_id == channel_id).join(User, User.uid == Message.uid)).all()
-            elif dm_id:
-                current_dm = session.exec(select(Dm).where(Dm.dm_id == dm_id).where(Dm.uid != uid)).first()
-                current_dm = session.exec(select(User).where(User.uid == current_dm.uid)).first()
-                current_dm = { "dm_id": dm_id, **current_dm.model_dump() }
-                messages = session.exec(select(Message, User).where(Message.dm_id == dm_id).join(User, User.uid == Message.uid)).all()
-            elif thread_id:
-                current_thread = session.exec(select(Message).where(Message.message_id == thread_id)).first()
-                messages = session.exec(select(Message, User).where(Message.thread_id == thread_id).join(User, User.uid == Message.uid)).all()
-            users = session.exec(select(User).where(User.uid != uid)).all()
-            current_user = session.exec(select(User).where(User.uid == uid)).first()
-
-        messages = [{"message": message.model_dump(), "sender": user.model_dump()} for message, user in messages]
-        return templates.TemplateResponse(
-            req,
-            "index.html",
-            {
-                "channels": [channel.model_dump() for channel in channels],
-                "dms": dms,
-                "current_channel": current_channel.model_dump() if current_channel else None,
-                "current_dm": current_dm,
-                "current_thread": current_thread.model_dump() if current_thread else None,
-                "messages": messages,
-                "users": [user.model_dump() for user in users],
-                "current_user": current_user.model_dump() if current_user else None,
-            },
-        )
     except Exception as e:
         print(e)
         return templates.TemplateResponse(req, "signin.html")
+
+    with Session(engine) as session:
+        # Add mock data if it doesn't exist
+        if not session.exec(select(User).where(User.uid == "gauntlet-bot")).first():
+            session.add(User(uid="gauntlet-bot", name="Gauntlet Bot", email="gauntlet@gauntletai.com", photo_url="/static/gauntlet_logo.png"))
+            session.commit()
+        if not session.exec(select(User).where(User.name == "Kamala Harris")).first():
+            session.add(User(uid="a", name="Kamala Harris", email="kamala@gauntletai.com", photo_url="https://pbs.twimg.com/profile_images/1592241313700782081/T2pTYU8d_400x400.jpg"))
+            session.commit()
+        if not session.exec(select(User).where(User.name == "Donald Trump")).first():
+            session.add(User(uid="b", name="Donald Trump", email="donald@gauntletai.com", photo_url="https://pbs.twimg.com/profile_images/874276197357596672/kUuht00m_400x400.jpg"))
+            session.commit()
+
+        if query:
+            messages = session.exec(select(Message, User).where(Message.content.contains(query)).join(User, User.uid == Message.uid)).all()
+            messages = [{**message.model_dump(), **user.model_dump()} for message, user in messages]
+            return templates.TemplateResponse(req, "search.html", {
+                "query": query,
+                "messages": messages,
+            })
+
+        # Use raw sql because it's hard to do with sqlmodel
+        dms = session.exec(text(f"""
+            select dm1.dm_id, user.name from dm as dm1
+            join dm as dm2 on dm1.dm_id=dm2.dm_id and dm1.uid != dm2.uid
+            join user on dm2.uid=user.uid
+            where dm1.uid='{uid}'""")).all()
+        dms = [{"dm_id": dm[0], "name": dm[1]} for dm in dms]
+
+        channels = session.exec(select(Channel)).all()
+        if not channels:
+            # Create a "general" channel
+            session.add(Channel(name="general"))
+            session.commit()
+            channels = session.exec(select(Channel)).all()
+
+        current_channel = None
+        current_dm = None
+        current_thread = None
+        messages = []
+        if not channel_id and not dm_id and not thread_id:
+            channel_id = channels[0].channel_id
+
+        if channel_id:
+            current_channel = session.exec(select(Channel).where(Channel.channel_id == channel_id)).first()
+            if not current_channel:
+                channel_id = channels[0].channel_id
+                current_channel = session.exec(select(Channel).where(Channel.channel_id == channel_id)).first()
+            messages = session.exec(select(Message, User).where(Message.channel_id == channel_id).join(User, User.uid == Message.uid)).all()
+        elif dm_id:
+            current_dm = session.exec(select(Dm).where(Dm.dm_id == dm_id).where(Dm.uid != uid)).first()
+            current_dm = session.exec(select(User).where(User.uid == current_dm.uid)).first()
+            current_dm = { "dm_id": dm_id, **current_dm.model_dump() }
+            messages = session.exec(select(Message, User).where(Message.dm_id == dm_id).join(User, User.uid == Message.uid)).all()
+        elif thread_id:
+            current_thread = session.exec(select(Message).where(Message.message_id == thread_id)).first()
+            messages = session.exec(select(Message, User).where(Message.thread_id == thread_id).join(User, User.uid == Message.uid)).all()
+        users = session.exec(select(User).where(User.uid != uid)).all()
+        current_user = session.exec(select(User).where(User.uid == uid)).first()
+
+    messages = [{"message": message.model_dump(), "sender": user.model_dump()} for message, user in messages]
+    return templates.TemplateResponse(
+        req,
+        "index.html",
+        {
+            "channels": [channel.model_dump() for channel in channels],
+            "dms": dms,
+            "current_channel": current_channel.model_dump() if current_channel else None,
+            "current_dm": current_dm,
+            "current_thread": current_thread.model_dump() if current_thread else None,
+            "messages": messages,
+            "users": [user.model_dump() for user in users],
+            "current_user": current_user.model_dump() if current_user else None,
+        },
+    )
 
 @app.get("/signin")
 def signin(req: Request):
