@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>ChatGenius</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/main.css">
+    <link rel="icon" href="/static/favicon.jpg" type="image/x-icon">
+</head>
+
+<style>
+h1 {
+    margin: 16px;
+    color: #ccc;
+    font-size: 24px;
+}
+p {
+    margin: 16px;
+    color: #ccc;
+    max-width: 600px;
+    line-height: 24px;
+}
+button {
+    padding: 16px 28px;
+    border: solid 1px rgb(137, 255, 137);
+    border-radius: 4px;
+    background: black;
+    color: white;
+    font-size: 20px;
+    font-weight: bold;
+    cursor: pointer;
+    &:hover {
+        background: #333;
+    }
+}
+</style>
+
+<body>
+    <h1>Clone your voice by talking for 30 seconds!</h1>
+    <div style="margin: 32px 16px; display: flex; align-items: center; gap: 16px;">
+        <button id="timerButton" style="width: 150px;">Start</button>
+        <p id="timerText" style="margin: 0; font-size: 20px;">0 seconds</p>
+    </div>
+    <p style="font-size: 18px; font-weight: bold; color: #bbb;">Not sure what to say? Try a random Wikipedia article:</p>
+    <p>
+        ImageReady has strong resemblances to Photoshop; it can even use the same set of Photoshop filters. One set of tools that does not resemble the Photoshop tools, however, is the Image Map set of tools, indicated by a shape or arrow with a hand that varied depending upon the version. This toolbox has several features not found in Photoshop, including: Toggle Image Map Visibility and Toggle Slice Visibility tools: toggle between showing and hiding image maps and slices, respectively.
+    </p>
+    <p>
+        "Now" is the seventh solo studio album by British singer-songwriter Graham Nash, released on 19 May 2023 through BMG Rights Management. It was co-produced by Nash and Todd Caldwell. It is Nash's first album of new material in seven years and received generally favorable reviews from critics. "Now" received a score of 75 out of 100 based on four critics' reviews on review aggregator Metacritic, indicating "generally favorable" reception.
+    </p>
+    <p>
+        The Bank Street Grounds was a baseball park located in Cincinnati. The park was home to three major league baseball teams. The National League Cincinnati Stars club in 1880, the current Cincinnati Reds franchise from 1882 to 1883 and the Cincinnati Outlaw Reds of the Union Association in 1884. It succeeded the Avenue Grounds as the home site for professional ball in the Queen City.
+    </p>
+</body>
+
+<script>
+class Microphone {
+    constructor() {
+        this.mediaRecorder = null;
+        this.audioChunks = [];
+    }
+
+    start(callback) {
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+                this.mediaRecorder = new MediaRecorder(stream);
+                this.audioChunks = [];
+                
+                this.mediaRecorder.ondataavailable = (event) => {
+                    this.audioChunks.push(event.data);
+                };
+
+                this.mediaRecorder.start();
+                callback();
+            });
+    }
+
+    stop(callback) {
+        if (!this.mediaRecorder) return;
+
+        this.mediaRecorder.onstop = () => {
+            const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
+            callback(audioBlob);
+            this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
+        };
+
+        this.mediaRecorder.stop();
+    }
+}
+
+const microphone = new Microphone();
+
+let startTime;
+let currentSeconds;
+
+function updateTimer() {
+    const elapsed = Date.now() - startTime;
+    const seconds = Math.floor((elapsed % 60000) / 1000);
+    if (seconds > currentSeconds) {
+        currentSeconds = seconds;
+        timerText.textContent = `${currentSeconds} seconds`;
+    }
+}
+
+let isRecording = false;
+timerButton.onclick = () => {
+    startTime = Date.now();
+    currentSeconds = 0;
+
+    isRecording = !isRecording;
+    if (isRecording) {
+        microphone.start(() => {
+            isRecording = true;
+            timerButton.textContent = "Stop";
+
+            function animate() {
+                if (!isRecording) return;
+                updateTimer();
+                requestAnimationFrame(animate);
+            }
+            requestAnimationFrame(animate);
+        });
+    } else {
+        microphone.stop(audioBlob => {
+            timerButton.textContent = "Start";
+
+            const formData = new FormData();
+            formData.append("file", audioBlob, "audio.webm");
+            fetch("/voice/clone", {
+                method: "POST",
+                body: formData,
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        alert("Done cloning! Go try it out in the chat 🥳");
+                    } else {
+                        alert("Something went wrong");
+                        console.log(data);
+                    }
+                });
+            alert("Your voice is being cloned! It will take 10-20 seconds to complete");
+        });
+    }
+}
+</script>
+
+</body>
+
+</html>

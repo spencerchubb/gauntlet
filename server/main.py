@@ -63,6 +63,7 @@ class User(SQLModel, table=True):
     status: str | None = Field(default=None)
     ai_enabled: bool = Field(default=False)
     prompt: str | None = Field(default=None)
+    fish_id: str | None = Field(default=None)
 
 engine = create_engine("sqlite:///db.sqlite3")
 SQLModel.metadata.create_all(engine)
@@ -441,6 +442,7 @@ async def stt(file: UploadFile, jwt: JwtCookie = None):
 
 class TtsBody(BaseModel):
     text: str
+    speaker_uid: str
 
 import nltk
 from nltk.tokenize import PunktTokenizer
@@ -454,26 +456,23 @@ async def tts(body: TtsBody, jwt: JwtCookie = None):
     except Exception as e:
         return "Unauthorized", 401
     
-    reference_ids = {
-        "Austen Allred": "94b510e7818847e3804c5b4050d3c70d",
-    }
-    websocket = websockets[uid]
+    # Use Austen's voice by default if they don't have one
+    fish_id = "94b510e7818847e3804c5b4050d3c70d"
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.uid == body.speaker_uid)).first()
+        if user.fish_id:
+            fish_id = user.fish_id
 
+    websocket = websockets[uid]
     sentences = sentence_tokenizer.tokenize(body.text.strip())
-    import time
-    start = time.time()
-    first_audio = None
     for sentence in sentences:
         chunk_total = b""
         for chunk in fish_client.tts(TTSRequest(
-            reference_id=reference_ids["Austen Allred"],
+            reference_id=fish_id,
             text=sentence,
             format="wav",
-            prosody=Prosody(speed=1.15),
         )):
             chunk_total += chunk
-        if not first_audio:
-            first_audio = time.time()
         audio_str = f"data:audio/wav;base64,{base64.b64encode(chunk_total).decode('utf-8')}"
         await websocket.send_json({"endpoint": "/tts", "audio": audio_str})
 
@@ -532,3 +531,24 @@ Answer the question using the context provided.
         "llama3-3-70b",
     )
     return RagOutput(answer=answer, docs=docs)
+
+@app.get("/voice")
+def voice(req: Request):
+    return templates.TemplateResponse(req, "voice.html")
+
+@app.post("/voice/clone")
+async def voice_clone(req: Request, file: UploadFile, jwt: JwtCookie = None):
+    try:
+        uid = auth.verify_session_cookie(jwt, check_revoked=True)["uid"]
+    except Exception as e:
+        return "Unauthorized", 401
+    
+    with Session(engine) as session:
+        user = session.exec(select(User).where(User.uid == uid)).first()
+        model = fish_client.create_model(
+            title=user.name,
+            voices=[await file.read()],
+        )
+        session.exec(update(User).where(User.uid == uid).values(fish_id=model.id))
+        session.commit()
+    return {"success": True}

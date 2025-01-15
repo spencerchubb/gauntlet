@@ -376,6 +376,13 @@ em-emoji-picker {
         <input id="nameInput" style="margin-top: 4px;" type="text" placeholder="John Doe" value="{{ current_user.name }}" />
         <p style="margin-top: 16px; color: #aaa;">Photo URL</p>
         <input id="photoUrlInput" style="margin-top: 4px;" type="text" placeholder="https://example.com/photo.jpg" value="{{ current_user.photo_url }}" />
+        {% if current_user.fish_id %}
+        <p style="margin-top: 16px; color: #aaa;">You currently have a voice clone</p>
+        <a href="/voice" style="margin-top: 8px;"><button>Change your voice clone</button></a>
+        {% else %}
+        <p style="margin-top: 16px; color: #aaa;">You don't have a voice clone yet</p>
+        <a href="/voice" style="margin-top: 8px;"><button>Clone your voice</button></a>
+        {% endif %}
         <div style="margin-top: 16px; display: flex; align-items: center; gap: 8px;">
             <input id="aiEnabledInput" style="width: 20px; height: 20px;" type="checkbox" {{ "checked" if current_user.ai_enabled else "" }} />
             <p style="color: #aaa;">Enable AI to talk on your behalf</p>
@@ -534,7 +541,7 @@ document.onclick = (event) => {
             // Audio is streamed and handled by websocket.
             messageIdOfAudio = message_id;
             renderAudioButton(messageIdOfAudio, "loading");
-            post("/tts", { text: content });
+            post("/tts", { text: content, speaker_uid: message.sender.uid });
         }
     } else if (event.target.classList.contains("messageReactButton")) {
         showPicker();
