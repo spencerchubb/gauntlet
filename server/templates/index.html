@@ -229,7 +229,8 @@ em-emoji-picker {
     border-radius: 4px;
     padding: 8px;
     min-width: 300px;
-    width: 50%;
+    max-width: 700px;
+    width: 75%;
     height: 60%;
     overflow-y: auto;
     box-shadow: 0 0 16px 0 #aaa;
@@ -383,12 +384,6 @@ em-emoji-picker {
         <p style="margin-top: 16px; color: #aaa;">You don't have a voice clone yet</p>
         <a href="/voice" style="margin-top: 8px;"><button>Clone your voice</button></a>
         {% endif %}
-        <div style="margin-top: 16px; display: flex; align-items: center; gap: 8px;">
-            <input id="aiEnabledInput" style="width: 20px; height: 20px;" type="checkbox" {{ "checked" if current_user.ai_enabled else "" }} />
-            <p style="color: #aaa;">Enable AI to talk on your behalf</p>
-        </div>
-        <p style="margin-top: 16px; color: #aaa;">Prompt</p>
-        <textarea id="promptInput" style="margin-top: 4px; width: 100%; min-height: 200px; resize: none;" placeholder="Write a prompt for your AI to follow">{{ current_user.prompt }}</textarea>
     </div>
 </body>
 
@@ -495,8 +490,6 @@ saveProfileButton.onclick = () => {
         status: statusInput.value,
         name: nameInput.value,
         photo_url: photoUrlInput.value,
-        ai_enabled: aiEnabledInput.checked,
-        prompt: promptInput.value,
     }).then(() => {
         location.reload();
     });

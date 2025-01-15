@@ -61,8 +61,6 @@ class User(SQLModel, table=True):
     name: str
     photo_url: str
     status: str | None = Field(default=None)
-    ai_enabled: bool = Field(default=False)
-    prompt: str | None = Field(default=None)
     fish_id: str | None = Field(default=None)
 
 engine = create_engine("sqlite:///db.sqlite3")
@@ -286,10 +284,8 @@ async def create_ai_message(dm_id: int, uid: str):
     with Session(engine) as session:
         dm = session.exec(select(Dm).where(Dm.dm_id == dm_id).where(Dm.uid != uid)).first()
         sender = session.exec(select(User).where(User.uid == dm.uid)).first()
-        if not sender.ai_enabled:
-            return
         messages = session.exec(select(Message).where(Message.dm_id == dm_id)).all()
-        system_prompt = f"Your job is to respond to Slack messages on behalf of {sender.name}. Be concise and to the point.\n\nHere is the prompt that {sender.name} has provided for you: {sender.prompt}"
+        system_prompt = f"Your job is to respond to Slack messages on behalf of {sender.name}. Be concise and to the point."
         messages = [{"role": "user" if message.uid == uid else "assistant", "content": message.content} for message in messages]
         ai_response = bedrock_completion(system_prompt, messages)
         ai_response = Message(channel_id=None, dm_id=dm_id, thread_id=None, uid=sender.uid, content=ai_response)
@@ -354,8 +350,6 @@ class UpdateUserBody(BaseModel):
     status: str | None = None
     name: str | None = None
     photo_url: str | None = None
-    ai_enabled: bool | None = None
-    prompt: str | None = None
 
 @app.post("/users/update")
 def update_user(req: Request, body: UpdateUserBody, jwt: JwtCookie = None):
@@ -365,7 +359,7 @@ def update_user(req: Request, body: UpdateUserBody, jwt: JwtCookie = None):
         return "Unauthorized", 401
 
     with Session(engine) as session:
-        session.exec(update(User).where(User.uid == uid).values(status=body.status, name=body.name, photo_url=body.photo_url, ai_enabled=body.ai_enabled, prompt=body.prompt))
+        session.exec(update(User).where(User.uid == uid).values(status=body.status, name=body.name, photo_url=body.photo_url))
         session.commit()
 
 class AuthGoogleBody(BaseModel):
