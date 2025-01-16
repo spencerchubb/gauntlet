@@ -139,7 +139,7 @@ em-emoji-picker {
     display: flex;
     flex-direction: column;
     padding: 0 16px;
-    gap: 16px;
+    gap: 8px;
     color: #d8d8d8;
 
     & img {
@@ -693,8 +693,8 @@ function renderMessage(data) {
         <button class="messageReactButton iconButton" data-message-id="${message.message_id}">🙂</button>
         <button class="messageThreadButton iconButton" data-message-id="${message.message_id}">🧵</button>
     </div>
-    ${message.reactions?.length > 0 ? `<div class="messageReactions">${renderReactions(message.reactions ?? {})}</div>` : ""}
-    ${message.citations?.length > 0 ? `<div class="messageReferences">${renderReferences(message)}</div>` : ""}
+    ${Object.keys(message.reactions).length ? `<div class="messageReactions">${renderReactions(message.reactions ?? {})}</div>` : ""}
+    ${message.citations?.length ? `<div class="messageReferences">${renderReferences(message)}</div>` : ""}
     `;
 
     // Check if user was already scrolled to bottom before appending
