@@ -1,10 +1,11 @@
 import asyncio
 import base64
+import io
 import json
+import os
+import tempfile
 from datetime import datetime
 from typing import Annotated, List
-import tempfile
-import os
 
 import boto3
 import openai
@@ -411,6 +412,72 @@ def generate_presigned_url(req: Request, filename: str, method: str, jwt: JwtCoo
     )
     return {"url": url}
 
+def parse_vtt(text):
+    lines = text.split("\n")
+    lines = [line.strip() for line in lines]
+    lines = [line for line in lines if line]
+    lines = [line for line in lines if not line.isdigit()] # Remove if it's an integer
+    lines = lines[1:] # First line is just "WEBVTT"
+    lines = lines[1::2] # Every other line is a timestamp
+    text = "\n".join(lines)
+    return text
+
+@app.post("/upload_file")
+async def upload_file(req: Request, file: UploadFile, jwt: JwtCookie = None):
+    try:
+        uid = auth.verify_session_cookie(jwt, check_revoked=True)["uid"]
+    except Exception as e:
+        return "Unauthorized", 401
+    
+    # Read file
+    file_bytes = await file.read()
+
+    # Write to tempfile, read lines, then join lines.
+    # This prevents weird issues with \r and \n.
+    with tempfile.NamedTemporaryFile() as temp_file:
+        temp_file.write(file_bytes)
+        temp_file.flush()
+        with open(temp_file.name, "r") as temp_file:
+            text = "\n".join(temp_file.readlines())
+
+    # Parse if it's a vtt file
+    if file.filename.endswith(".vtt"):
+        text = parse_vtt(text)
+    
+    # Replace some substrings because the Zoom transcript does not know about Zax
+    text = text.replace("Zach's", "Zax")
+    text = text.replace("Zach Software", "Zax Software")
+
+    # Split into chunks
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+    from transformers import AutoTokenizer
+    chunk_size = 200
+    tokenizer_name = "sentence-transformers/all-MiniLM-L6-v2"
+    text_splitter = RecursiveCharacterTextSplitter.from_huggingface_tokenizer(
+        AutoTokenizer.from_pretrained(tokenizer_name),
+        chunk_size=chunk_size,
+        chunk_overlap=int(chunk_size / 10),
+        add_start_index=True,
+        strip_whitespace=True,
+        separators=["\n\n", "\n", ".", " ", ""],
+    )
+    chunks = text_splitter.create_documents([text])
+    chunks = [chunk.page_content for chunk in chunks]
+    
+    # Embed and store in vector database
+    metadata = [{"type": "file", "filename": file.filename} for chunk in chunks]
+    add_documents(chunks, metadata)
+
+    # Upload to S3
+    s3_client = boto3.client("s3", region_name="us-east-2")
+    s3_client.upload_fileobj(
+        io.BytesIO(file_bytes),
+        "spencer-chubb-gauntlet",
+        f"chatgenius/{file.filename}",
+    )
+    
+    return {"success": True}
+
 @app.post("/stt")
 async def stt(file: UploadFile, jwt: JwtCookie = None):
     try:
@@ -419,7 +486,7 @@ async def stt(file: UploadFile, jwt: JwtCookie = None):
         return "Unauthorized", 401
 
     # Create a temporary file to store the audio
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_file:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
         contents = await file.read()
         temp_file.write(contents)
         temp_file.flush()
@@ -427,7 +494,7 @@ async def stt(file: UploadFile, jwt: JwtCookie = None):
         # Use the temporary file for transcription
         transcription = openai_client.audio.transcriptions.create(
             model="whisper-1", 
-            file=open(temp_file.name, 'rb')
+            file=open(temp_file.name, "rb")
         )
     
     # Clean up the temporary file
@@ -440,8 +507,13 @@ class TtsBody(BaseModel):
 
 import nltk
 from nltk.tokenize import PunktTokenizer
-nltk.download("punkt_tab")
-sentence_tokenizer = PunktTokenizer()
+
+sentence_tokenizer = None
+def get_sentence_tokenizer():
+    if not sentence_tokenizer:
+        nltk.download("punkt_tab")
+        sentence_tokenizer = PunktTokenizer()
+    return sentence_tokenizer
 
 @app.post("/tts")
 async def tts(body: TtsBody, jwt: JwtCookie = None):
@@ -458,7 +530,7 @@ async def tts(body: TtsBody, jwt: JwtCookie = None):
             fish_id = user.fish_id
 
     websocket = websockets[uid]
-    sentences = sentence_tokenizer.tokenize(body.text.strip())
+    sentences = get_sentence_tokenizer().tokenize(body.text.strip())
     for sentence in sentences:
         chunk_total = b""
         for chunk in fish_client.tts(TTSRequest(

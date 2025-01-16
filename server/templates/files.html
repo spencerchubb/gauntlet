@@ -44,7 +44,15 @@ button {
     <p id="modal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: #fff; padding: 16px; border-radius: 4px;">Drop to upload!</p>
 </body>
 
+<script id="pageData" type="application/json">
+{
+    "files": {{ files | tojson | safe }}
+}
+</script>
+
 <script>
+const pageData = JSON.parse(document.getElementById("pageData").textContent);
+const files = pageData.files;
 
 document.ondragover = (e) => {
     e.preventDefault();
@@ -62,24 +70,27 @@ document.ondrop = async (e) => {
     const file = e.dataTransfer.files[0];
     console.log(file);
 
-    const response = await fetch(`/generate_presigned_url?filename=${file.name}&filetype=${file.type}&method=put`);
-    const data = await response.json();
-    const url = data.url;
-    console.log(url);
+    if (files.includes(file.name)) {
+        alert("File already exists");
+        return;
+    }
 
-    fetch(url, {
-        method: "PUT",
-        headers: { "Content-Type": file.type },
-        mode: "cors",
-        body: file,
+    const formData = new FormData();
+    formData.append("file", file);
+
+    fetch(`/upload_file`, {
+        method: "POST",
+        body: formData,
     })
-        .then(res => {
-            if (res.ok) {
+        .then(res => res.json())
+        .then(data => {
+            if (data["success"]) {
                 location.reload();
             } else {
-                console.log("File upload failed");
+                alert("Something went wrong");
             }
         });
+    alert("Uploading file. Please wait...");
 };
 
 function downloadFile(url, fileName) {

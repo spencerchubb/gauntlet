@@ -6,7 +6,7 @@ from typing import List
 
 dense_model = "sentence-transformers/all-MiniLM-L6-v2"
 sparse_model = "Qdrant/bm25"
-collection_name = f"gauntlet-bot"
+collection_name = "gauntlet-bot"
 
 client = None
 def init():
@@ -31,16 +31,18 @@ def init():
             vectors_config=client.get_fastembed_vector_params(),
             sparse_vectors_config=client.get_fastembed_sparse_vector_params(), 
         )
-init()
 
-def add_documents(docs):
-    client.add(
+def add_documents(docs, metadata=None):
+    init()
+    return client.add(
         collection_name=collection_name,
         documents=docs,
+        metadata=metadata,
         parallel=8,
     )
 
 def similarity_search(query: str, uid: str | None = None) -> List[str]:
+    init()
     filter = Filter(must=[
         FieldCondition(key="metadata.uid", match=MatchValue(value=uid)),
     ]) if uid else None
