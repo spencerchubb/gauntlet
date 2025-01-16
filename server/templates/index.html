@@ -139,7 +139,7 @@ em-emoji-picker {
     display: flex;
     flex-direction: column;
     padding: 0 16px;
-    gap: 8px;
+    gap: 16px;
     color: #d8d8d8;
 
     & img {
@@ -147,35 +147,56 @@ em-emoji-picker {
         height: 48px;
         border-radius: 50%;
     }
+}
 
-    & .messageBody {
+.messageBody {
+    display: flex;
+    gap: 12px;
+
+    & > div > div {
         display: flex;
+        align-items: end;
         gap: 12px;
-
-        & > div > div {
-            display: flex;
-            align-items: end;
-            gap: 12px;
-        }
-
-        & > div > p {
-            margin-top: 4px;
-        }
-
-        & > div > div > p {
-            color: #aaa;
-            font-size: 14px;
-        }
     }
 
-    & .messageReactions {
-        display: flex;
-        gap: 8px;
+    & > div > p {
+        margin-top: 4px;
+    }
 
-        & p {
-            background: #282828;
-            padding: 4px;
-            border-radius: 4px;
+    & > div > div > p {
+        color: #aaa;
+        font-size: 14px;
+    }
+}
+
+.messageReactions {
+    display: flex;
+    gap: 8px;
+
+    & p {
+        background: #282828;
+        padding: 4px;
+        border-radius: 4px;
+    }
+}
+
+.messageReferences {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+
+    & button {
+        background: none;
+        border: solid 1px #555;
+        padding: 4px;
+        border-radius: 4px;
+        color: #ccc;
+        font-size: 14px;
+        cursor: pointer;
+
+        &:hover {
+            background: #444;
         }
     }
 }
@@ -404,6 +425,7 @@ const currentChannel = pageData.currentChannel;
 const currentDm = pageData.currentDm;
 const currentThread = pageData.currentThread;
 const messages = pageData.messages;
+console.log(messages);
 
 const queryParams = new URLSearchParams(window.location.search);
 const threadId = parseInt(queryParams.get("thread_id"));
@@ -542,6 +564,12 @@ document.onclick = (event) => {
     } else if (event.target.classList.contains("messageThreadButton")) {
         const message_id = parseInt(event.target.getAttribute("data-message-id"));
         location.href = `/?thread_id=${message_id}`;
+    } else if (event.target.classList.contains("messageReferenceButton")) {
+        const message_id = parseInt(event.target.getAttribute("data-message-id"));
+        const reference_index = parseInt(event.target.getAttribute("data-reference-index"));
+        const message = messages.find(message => message.message.message_id === message_id);
+        const reference = message.message.citations[reference_index];
+        alert(reference.document);
     }
 }
 
@@ -636,6 +664,11 @@ function renderReactions(reactions) {
     return Object.entries(reactions).map(([reaction, count]) => `<p>${count} ${reaction}</p>`).join("");
 }
 
+function renderReferences(message) {
+    const citations = message.citations ?? [];
+    return "<p>References:</p>" + citations.map((reference, index) => `<button class="messageReferenceButton" data-message-id="${message.message_id}" data-reference-index="${index}">${index + 1}) ${reference.filename}</button>`).join("");
+}
+
 function renderMessage(data) {
     let { message, sender } = data;
 
@@ -660,7 +693,9 @@ function renderMessage(data) {
         <button class="messageReactButton iconButton" data-message-id="${message.message_id}">🙂</button>
         <button class="messageThreadButton iconButton" data-message-id="${message.message_id}">🧵</button>
     </div>
-    <div class="messageReactions">${renderReactions(message.reactions ?? {})}</div>`;
+    ${message.reactions?.length > 0 ? `<div class="messageReactions">${renderReactions(message.reactions ?? {})}</div>` : ""}
+    ${message.citations?.length > 0 ? `<div class="messageReferences">${renderReferences(message)}</div>` : ""}
+    `;
 
     // Check if user was already scrolled to bottom before appending
     const wasAtBottom = chatBody.scrollHeight - chatBody.clientHeight <= chatBody.scrollTop + 1;

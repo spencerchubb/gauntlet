@@ -1,8 +1,9 @@
 import os
+from typing import Any, Dict, List
 
+from pydantic import BaseModel
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import FieldCondition, Filter, MatchValue
-from typing import List
 
 dense_model = "sentence-transformers/all-MiniLM-L6-v2"
 sparse_model = "Qdrant/bm25"
@@ -41,7 +42,7 @@ def add_documents(docs, metadata=None):
         parallel=8,
     )
 
-def similarity_search(query: str, uid: str | None = None) -> List[str]:
+def similarity_search(query: str, uid: str | None = None) -> List[Dict[str, Any]]:
     init()
     filter = Filter(must=[
         FieldCondition(key="metadata.uid", match=MatchValue(value=uid)),
@@ -53,4 +54,4 @@ def similarity_search(query: str, uid: str | None = None) -> List[str]:
         query_filter=filter,
         limit=4,
     )
-    return [doc.document for doc in docs]
+    return [doc.metadata for doc in docs]

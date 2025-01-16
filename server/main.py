@@ -5,7 +5,7 @@ import json
 import os
 import tempfile
 from datetime import datetime
-from typing import Annotated, List
+from typing import Annotated, Any, Dict, List
 
 import boto3
 import openai
@@ -14,7 +14,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fish_audio_sdk import Session as FishSession, TTSRequest
-from fish_audio_sdk.schemas import Prosody
 from pydantic import BaseModel, field_serializer
 from sqlmodel import create_engine, delete, Field, func, select, Session, SQLModel, text, update
 
@@ -46,6 +45,7 @@ class Message(SQLModel, table=True):
     created: datetime | None = Field(default_factory=lambda: datetime.now())
     content: str
     reactions: str | None = Field(default=None)
+    citations: str | None = Field(default=None)
     # vector_store_id: str
     
     @field_serializer("created")
@@ -55,6 +55,10 @@ class Message(SQLModel, table=True):
     @field_serializer("reactions")
     def serialize_reactions(self, reactions: str) -> dict[str, int]:
         return json.loads(reactions or "{}")
+    
+    @field_serializer("citations")
+    def serialize_citations(self, citations: str) -> list[dict[str, Any]]:
+        return json.loads(citations or "[]")
 
 class User(SQLModel, table=True):
     uid: str = Field(primary_key=True)
@@ -274,7 +278,7 @@ async def create_gauntlet_bot_message(body: CreateMessageBody) -> str:
     with Session(engine) as session:
         uid = "gauntlet-bot"
         sender = session.exec(select(User).where(User.uid == uid)).first()
-        message = Message(channel_id=body.channel_id, dm_id=body.dm_id, thread_id=body.thread_id, uid=uid, content=rag_output.answer)
+        message = Message(channel_id=body.channel_id, dm_id=body.dm_id, thread_id=body.thread_id, uid=uid, content=rag_output.answer, citations=json.dumps(rag_output.docs))
         session.add(message)
         session.commit()
         session.refresh(message)
@@ -561,41 +565,47 @@ async def send_websocket_messages(session, message, payload):
 
 class RagOutput(BaseModel):
     answer: str
-    docs: List[str]
+    docs: List[Dict[str, Any]]
 
 def answer_with_rag(question: str) -> str:
-    hypothetical_document = bedrock_completion(
-        """You are a question answering assistant for Gauntlet AI, an intensive AI training program for engineers.
-Answer length MUST be 1 sentence to 1 paragraph in length. Answer questions with a decisive and convincing answer.
-Do NOT express uncertainty, NEVER say you don't know something.
-""",
-        [{"role": "user", "content": question}],
-        "llama3-2-3b",
-    )
-    hypothetical_document = f"\n{hypothetical_document}"
+#     hypothetical_document = bedrock_completion(
+#         """You are a question answering assistant for Gauntlet AI, an intensive AI training program for engineers.
+# Answer length MUST be 1 sentence to 1 paragraph in length. Answer questions with a decisive and convincing answer.
+# Do NOT express uncertainty, NEVER say you don't know something.
+# """,
+#         [{"role": "user", "content": question}],
+#         "llama3-2-3b",
+#     )
+#     hypothetical_document = f"\n{hypothetical_document}"
 
-    context = ""
-    docs = similarity_search(question + hypothetical_document)
+    references = ""
+    docs = similarity_search(question)
+    print("Got similar documents")
     for i, doc in enumerate(docs):
-        context += f"\n{i + 1} {doc}"
+        references += f"\n{i + 1} {doc['document']}"
     prompt = f"""### Instructions
 You are a question-answering assistant. You will be given a question and context.
 For questions involving dates or times, give absolute answers instead of relative answers if possible (e.g. "3pm" instead of "in 2 hours").
 Answer the question using the context provided.
+If a reference is relevant, cite the reference number. You may cite multiple references.
 
 ### Question
 {question}
 
-### Context
-{context}
+### References
+{references}
 
 ### Answer
 """
+    import time
+    start = time.time()
     answer = bedrock_completion(
         "You are a question-answering assistant.",
         [{"role": "user", "content": prompt}],
-        "llama3-3-70b",
+        "llama3-2-11b",
     )
+    end = time.time()
+    print(f"Generated answer in {end - start} seconds")
     return RagOutput(answer=answer, docs=docs)
 
 @app.get("/voice")
