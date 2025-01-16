@@ -514,6 +514,7 @@ from nltk.tokenize import PunktTokenizer
 
 sentence_tokenizer = None
 def get_sentence_tokenizer():
+    global sentence_tokenizer
     if not sentence_tokenizer:
         nltk.download("punkt_tab")
         sentence_tokenizer = PunktTokenizer()
